@@ -572,6 +572,7 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     /* Add local addresses to host candidates, unless max_host_cands
      * is set to zero.
      */
+    printf("Add local addresses to host candidates, unless max_host_cands\n");
     if (stun_cfg->max_host_cands) {
         pj_stun_sock_info stun_sock_info;
         unsigned i;
@@ -612,6 +613,8 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
                     }
                 }
             }
+            pj_sockaddr_print(addr, addrinfo, sizeof(addrinfo), 3);
+            printf("addrinfo %s\n", &addrinfo);
 
             /* Ignore IPv6 link-local address */
             if (stun_cfg->af == pj_AF_INET6()) {
