@@ -20,7 +20,6 @@
 #include <pjnath/stun_sock.h>
 #include <pjnath/errno.h>
 #include <pjnath/stun_transaction.h>
-#include <pjnath/stun_session.h>
 #include <pjlib-util/srv_resolver.h>
 #include <pj/activesock.h>
 #include <pj/addr_resolv.h>
@@ -47,6 +46,7 @@ struct pj_stun_sock
     void                *user_data;        /* Application user data    */
     pj_bool_t                 is_destroying; /* Destroy already called   */
     int                         af;                /* Address family            */
+    pj_stun_tp_type         conn_type;
     pj_stun_config         stun_cfg;        /* STUN config (ioqueue etc)*/
     pj_stun_sock_cb         cb;                /* Application callbacks    */
 
@@ -165,6 +165,7 @@ static pj_bool_t pj_stun_sock_cfg_is_valid(const pj_stun_sock_cfg *cfg)
 PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
                                          const char *name,
                                          int af,
+                                         pj_stun_tp_type conn_type,
                                          const pj_stun_sock_cb *cb,
                                          const pj_stun_sock_cfg *cfg,
                                          void *user_data,
@@ -177,18 +178,32 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     unsigned i;
     pj_uint16_t max_bind_retry;
     pj_status_t status;
+    int sock_type;
 
     PJ_ASSERT_RETURN(stun_cfg && cb && p_stun_sock, PJ_EINVAL);
     PJ_ASSERT_RETURN(af==pj_AF_INET()||af==pj_AF_INET6(), PJ_EAFNOTSUP);
     PJ_ASSERT_RETURN(!cfg || pj_stun_sock_cfg_is_valid(cfg), PJ_EINVAL);
     PJ_ASSERT_RETURN(cb->on_status, PJ_EINVAL);
+    PJ_ASSERT_RETURN(conn_type!=PJ_STUN_TP_TCP || PJ_HAS_TCP, PJ_EINVAL);
 
     status = pj_stun_config_check_valid(stun_cfg);
     if (status != PJ_SUCCESS)
         return status;
 
-    if (name == NULL)
-        name = "stuntp%p";
+    if (name == NULL) {
+      switch (conn_type) {
+      case PJ_STUN_TP_UDP:
+          name = "udpstun%p";
+          break;
+      case PJ_STUN_TP_TCP:
+          name = "tcpstun%p";
+          break;
+      default:
+          PJ_ASSERT_RETURN(!"Invalid STUN conn_type", PJ_EINVAL);
+          name = "tcpstun%p";
+          break;
+      }
+    }
 
     if (cfg == NULL) {
         pj_stun_sock_cfg_default(&default_cfg);
@@ -203,9 +218,15 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     stun_sock->obj_name = pool->obj_name;
     stun_sock->user_data = user_data;
     stun_sock->af = af;
+    stun_sock->conn_type = conn_type;
     stun_sock->sock_fd = PJ_INVALID_SOCKET;
     pj_memcpy(&stun_sock->stun_cfg, stun_cfg, sizeof(*stun_cfg));
     pj_memcpy(&stun_sock->cb, cb, sizeof(*cb));
+
+    if (stun_sock->conn_type == PJ_STUN_TP_UDP)
+      sock_type = pj_SOCK_DGRAM();
+    else
+      sock_type = pj_SOCK_STREAM();
 
     stun_sock->ka_interval = cfg->ka_interval;
     if (stun_sock->ka_interval == 0)
@@ -226,7 +247,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
                             &stun_sock_destructor);
 
     /* Create socket and bind socket */
-    status = pj_sock_socket(af, pj_SOCK_DGRAM(), 0, &stun_sock->sock_fd);
+    status = pj_sock_socket(af, sock_type, 0, &stun_sock->sock_fd);
     if (status != PJ_SUCCESS)
         goto on_error;
 
@@ -292,23 +313,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     if (status != PJ_SUCCESS)
         goto on_error;
 
-    /* Create more useful information string about this transport */
-#if 0
-    {
-        pj_sockaddr bound_addr;
-        int addr_len = sizeof(bound_addr);
-
-        status = pj_sock_getsockname(stun_sock->sock_fd, &bound_addr,
-                                     &addr_len);
-        if (status != PJ_SUCCESS)
-            goto on_error;
-
-        stun_sock->info = pj_pool_alloc(pool, PJ_INET6_ADDRSTRLEN+10);
-        pj_sockaddr_print(&bound_addr, stun_sock->info,
-                          PJ_INET6_ADDRSTRLEN, 3);
-    }
-#endif
-
     /* Init active socket configuration */
     {
         pj_activesock_cfg activesock_cfg;
@@ -324,10 +328,50 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
         activesock_cb.on_data_recvfrom = &on_data_recvfrom;
         activesock_cb.on_data_sent = &on_data_sent;
         status = pj_activesock_create(pool, stun_sock->sock_fd,
-                                      pj_SOCK_DGRAM(),
+                                      sock_type,
                                       &activesock_cfg, stun_cfg->ioqueue,
                                       &activesock_cb, stun_sock,
                                       &stun_sock->active_sock);
+
+        if (status != PJ_SUCCESS)
+            goto on_error;
+
+/* TODO(sblin) */
+#if PJ_HAS_TCP
+        // TODO NOT HERE!!!!
+        char addrinfo[PJ_INET6_ADDRSTRLEN+10];
+        if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
+            pj_sockaddr bound_addr;
+            int addr_len = sizeof(bound_addr);
+
+            status = pj_sock_getsockname(stun_sock->sock_fd, &bound_addr,
+                                         &addr_len);
+            if (status != PJ_SUCCESS)
+                goto on_error;
+
+            pj_sockaddr_print(&bound_addr, addrinfo,
+                              PJ_INET6_ADDRSTRLEN, 3);
+            PJ_LOG(5,(stun_sock->pool->obj_name, "Connecting to %s", addrinfo));
+
+            status=pj_activesock_start_connect(
+                                        stun_sock->active_sock,
+                                        stun_sock->pool,
+                                        &bound_addr,
+                                        pj_sockaddr_get_len(&bound_addr));
+        } else {
+            status = PJ_SUCCESS;
+        }
+        if (status != PJ_SUCCESS && status != PJ_EPENDING) {
+            pj_perror(3, stun_sock->pool->obj_name, status,
+                      "Failed to connect to %s", addrinfo);
+            pj_stun_sock_destroy(stun_sock);
+            return;
+        }
+#endif
+/**/
+        PJ_LOG(5,(stun_sock->pool->obj_name, "Connected"));
+
+
         if (status != PJ_SUCCESS)
             goto on_error;
 
@@ -355,7 +399,8 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
                                         stun_sock->obj_name,
                                         &sess_cb, PJ_FALSE,
                                         stun_sock->grp_lock,
-                                        &stun_sock->stun_sess);
+                                        &stun_sock->stun_sess,
+                                        conn_type);
         if (status != PJ_SUCCESS)
             goto on_error;
     }
@@ -731,8 +776,13 @@ PJ_DEF(pj_status_t) pj_stun_sock_sendto( pj_stun_sock *stun_sock,
         send_key = &stun_sock->send_key;
 
     size = pkt_len;
-    status = pj_activesock_sendto(stun_sock->active_sock, send_key,
-                                  pkt, &size, flag, dst_addr, addr_len);
+    if (stun_sock->conn_type == PJ_STUN_TP_UDP) {
+        status = pj_activesock_sendto(stun_sock->active_sock, send_key,
+                                      pkt, &size, flag, dst_addr, addr_len);
+    } else {
+        status = pj_activesock_send(stun_sock->active_sock, send_key,
+                                      pkt, &size, flag);
+    }
 
     pj_grp_lock_release(stun_sock->grp_lock);
     return status;
@@ -761,9 +811,16 @@ static pj_status_t sess_on_send_msg(pj_stun_session *sess,
     PJ_UNUSED_ARG(token);
 
     size = pkt_size;
-    return pj_activesock_sendto(stun_sock->active_sock,
+    if (stun_sock->conn_type == PJ_STUN_TP_UDP) {
+        return pj_activesock_sendto(stun_sock->active_sock,
+                                    &stun_sock->int_send_key,
+                                    pkt, &size, 0, dst_addr, addr_len);
+    }
+    return pj_activesock_send(stun_sock->active_sock,
                                 &stun_sock->int_send_key,
-                                pkt, &size, 0, dst_addr, addr_len);
+                                pkt, &size, 0);
+
+
 }
 
 /* This callback is called by the STUN session when outgoing transaction

@@ -341,6 +341,12 @@ static pj_status_t icedemo_init(void)
     else
         icedemo.ice_cfg.opt.aggressive = PJ_TRUE;
 
+    /* Connection type to STUN server */
+    if (icedemo.opt.ice_tcp)
+        icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_TCP;
+    else
+        icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_UDP;
+
     /* Configure STUN/srflx candidate resolution */
     if (icedemo.opt.stun_srv.slen) {
         char *pos;
@@ -355,12 +361,6 @@ static pj_status_t icedemo_init(void)
             icedemo.ice_cfg.stun.server = icedemo.opt.stun_srv;
             icedemo.ice_cfg.stun.port = PJ_STUN_PORT;
         }
-
-        /* Connection type to STUN server */
-        if (icedemo.opt.ice_tcp)
-            icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_TCP;
-        else
-            icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_UDP;
 
         /* For this demo app, configure longer STUN keep-alive time
          * so that it does't clutter the screen output.

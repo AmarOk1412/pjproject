@@ -364,6 +364,9 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
         }
     }
 
+    printf("/* Init TURN socket */\n" );
+
+
     /* Init TURN socket */
     pj_bzero(&turn_sock_cb, sizeof(turn_sock_cb));
     turn_sock_cb.on_rx_data = &turn_on_rx_data;
@@ -514,7 +517,7 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
 
     /* Create the STUN transport */
     status = pj_stun_sock_create(&ice_st->cfg.stun_cfg, NULL,
-                                 stun_cfg->af, &stun_sock_cb,
+                                 stun_cfg->af, stun_cfg->conn_type, &stun_sock_cb,
                                  sock_cfg, data, &comp->stun[idx].sock);
     if (status != PJ_SUCCESS)
         return status;
@@ -722,6 +725,7 @@ static pj_status_t create_comp(pj_ice_strans *ice_st, unsigned comp_id)
     }
 
     /* Create TURN relay if configured. */
+    printf("/* Create TURN relay if configured */\n" );
     for (i=0; i<ice_st->cfg.turn_tp_cnt; ++i) {
         status = add_update_turn(ice_st, comp, i);
         if (status != PJ_SUCCESS) {

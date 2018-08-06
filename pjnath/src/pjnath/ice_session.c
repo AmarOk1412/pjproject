@@ -291,7 +291,8 @@ static pj_status_t init_comp(pj_ice_sess *ice,
     status = pj_stun_session_create(&ice->stun_cfg, NULL,
                                     &sess_cb, PJ_TRUE,
                                     ice->grp_lock,
-                                    &comp->stun_sess);
+                                    &comp->stun_sess,
+                                  /*TODO (sblin)*/ PJ_STUN_TP_UDP);
     if (status != PJ_SUCCESS)
         return status;
 
