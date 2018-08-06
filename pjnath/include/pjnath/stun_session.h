@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_STUN_SESSION_H__
 #define __PJNATH_STUN_SESSION_H__
@@ -41,26 +41,26 @@ PJ_BEGIN_DECL
  * @addtogroup PJNATH_STUN_SESSION
  * @{
  *
- * This is is a transport-independent object to manage a client or server 
+ * This is is a transport-independent object to manage a client or server
  * STUN session. It has the following features:
- * 
+ *
  *  - <b>transport independent</b>:\n
  *    the object does not have it's own socket, but rather it provides
  *    functions and callbacks to send and receive packets. This way the
- *    object can be used by different transport types (e.g. UDP, TCP, 
+ *    object can be used by different transport types (e.g. UDP, TCP,
  *    TLS, etc.) as well as better integration to application which
  *    already has its own means to send and receive packets.
- * 
+ *
  *  - <b>authentication management</b>:\n
  *    the object manages STUN authentication throughout the lifetime of
  *    the session. For client sessions, once it's given a credential to
  *    authenticate itself with the server, the object will automatically
  *    add authentication info (the MESSAGE-INTEGRITY) to the request as
- *    well as authenticate the response. It will also handle long-term 
+ *    well as authenticate the response. It will also handle long-term
  *    authentication challenges, including handling of nonce expiration,
- *    and retry the request automatically. For server sessions, it can 
+ *    and retry the request automatically. For server sessions, it can
  *    be configured to authenticate incoming requests automatically.
- *  
+ *
  *  - <b>static or dynamic credential</b>:\n
  *    application may specify static or dynamic credential to be used by
  *    the STUN session. Static credential means a static combination of
@@ -68,16 +68,16 @@ PJ_BEGIN_DECL
  *    duration), while dynamic credential provides callback to ask the
  *    application about which username/password to use everytime
  *    authentication is about to be performed.
- *    
+ *
  *  - <b>client transaction management</b>:\n
  *    outgoing requests may be sent with a STUN transaction for reliability,
  *    and the object will manage the transaction internally (including
  *    performing retransmissions). Application will be notified about the
  *    result of the request when the response arrives (or the transaction
  *    times out). When the request is challenged with authentication, the
- *    object will retry the request with new authentication info, and 
+ *    object will retry the request with new authentication info, and
  *    application will be notified about the final result of this request.
- * 
+ *
  *  - <b>server transaction management</b>:\n
  *    application may ask response to incoming requests to be cached by
  *    the object, and in this case the object will check for cached
@@ -96,7 +96,7 @@ PJ_BEGIN_DECL
  *
  *  - <b>create the STUN session</b>:\n
  *    by calling #pj_stun_session_create(). Among other things, this
- *    function requires the instance of #pj_stun_config and also 
+ *    function requires the instance of #pj_stun_config and also
  *    #pj_stun_session_cb structure which stores callbacks to send
  *    outgoing packets as well as to notify application about incoming
  *    STUN requests, responses, and indicates and other events.
@@ -125,8 +125,8 @@ PJ_BEGIN_DECL
  *    use #pj_stun_session_send_msg() to send outgoing STUN messages (this
  *    includes STUN requests, indications, and responses). The function has
  *    options whether to retransmit the request (for non reliable transports)
- *    or to cache the response if we're sending response. This function in 
- *    turn will call the \a on_send_msg() callback of #pj_stun_session_cb 
+ *    or to cache the response if we're sending response. This function in
+ *    turn will call the \a on_send_msg() callback of #pj_stun_session_cb
  *    to request the application to send the packet.
  *
  *  - <b>handling incoming packet:</b>\n
@@ -147,7 +147,7 @@ PJ_BEGIN_DECL
  *
  *  - <b>creating and sending response:</b>\n
  *    create the STUN response with #pj_stun_session_create_res(). This will
- *    create a transmit data buffer containing a blank STUN response. You 
+ *    create a transmit data buffer containing a blank STUN response. You
  *    will then typically need to add STUN attributes that are relevant to
  *    the response, but note that some default attributes will
  *    be added by the session later when the message is sent (such as
@@ -158,7 +158,7 @@ PJ_BEGIN_DECL
  *  - <b>convenient way to send response:</b>\n
  *    the #pj_stun_session_respond() is provided as a convenient way to
  *    create and send simple STUN responses, such as error responses.
- *    
+ *
  *  - <b>destroying the session:</b>\n
  *    once the session is done, use #pj_stun_session_destroy() to destroy
  *    the session.
@@ -174,6 +174,30 @@ typedef struct pj_stun_rx_data pj_stun_rx_data;
 /** Forward declaration for pj_stun_session */
 typedef struct pj_stun_session pj_stun_session;
 
+/**
+ * STUN transport types, which will be used both to specify the connection
+ * type for reaching STUN server and the type of allocation transport to be
+ * requested to server (the REQUESTED-TRANSPORT attribute).
+ */
+typedef enum pj_stun_tp_type
+{
+    /**
+     * UDP transport, which value corresponds to IANA protocol number.
+     */
+    PJ_STUN_TP_UDP = 17,
+
+    /**
+     * TCP transport, which value corresponds to IANA protocol number.
+     */
+    PJ_STUN_TP_TCP = 6,
+
+    /**
+     * TLS transport. The TLS transport will only be used as the connection
+     * type to reach the server and never as the allocation transport type.
+     */
+    PJ_STUN_TP_TLS = 255
+
+} pj_stun_tp_type;
 
 /**
  * This is the callback to be registered to pj_stun_session, to send
@@ -187,7 +211,7 @@ typedef struct pj_stun_session_cb
      *
      * @param sess	    The STUN session.
      * @param token	    The token associated with this outgoing message
-     *			    and was set by the application. This token was 
+     *			    and was set by the application. This token was
      *			    set by application in pj_stun_session_send_msg()
      *			    for outgoing messages that are initiated by the
      *			    application, or in pj_stun_session_on_rx_pkt()
@@ -210,11 +234,11 @@ typedef struct pj_stun_session_cb
 			       const pj_sockaddr_t *dst_addr,
 			       unsigned addr_len);
 
-    /** 
+    /**
      * Callback to be called on incoming STUN request message. This function
      * is called when application calls pj_stun_session_on_rx_pkt() and when
      * the STUN session has detected that the incoming STUN message is a
-     * STUN request message. In the 
+     * STUN request message. In the
      * callback processing, application MUST create a response by calling
      * pj_stun_session_create_response() function and send the response
      * with pj_stun_session_send_msg() function, before returning from
@@ -242,7 +266,7 @@ typedef struct pj_stun_session_cb
 				 unsigned src_addr_len);
 
     /**
-     * Callback to be called when response is received or the transaction 
+     * Callback to be called when response is received or the transaction
      * has timed out. This callback is called either when application calls
      * pj_stun_session_on_rx_pkt() with the packet containing a STUN
      * response for the client transaction, or when the internal timer of
@@ -255,7 +279,7 @@ typedef struct pj_stun_session_cb
      *			    or other error has occurred, and the response
      *			    argument may be NULL.
      *			    Note that when the status is not success, the
-     *			    response may contain non-NULL value if the 
+     *			    response may contain non-NULL value if the
      *			    response contains STUN ERROR-CODE attribute.
      * @param token	    The token that was set by the application  when
      *			    calling pj_stun_session_send_msg() function.
@@ -265,9 +289,9 @@ typedef struct pj_stun_session_cb
      * @param response	    The response message, on successful transaction,
      *			    or otherwise MAY BE NULL if status is not success.
      *			    Note that when the status is not success, this
-     *			    argument may contain non-NULL value if the 
+     *			    argument may contain non-NULL value if the
      *			    response contains STUN ERROR-CODE attribute.
-     * @param src_addr	    The source address where the response was 
+     * @param src_addr	    The source address where the response was
      *			    received, or NULL if the response is NULL.
      * @param src_addr_len  The length of the source  address.
      */
@@ -321,8 +345,8 @@ struct pj_stun_rx_data
     pj_stun_msg		    *msg;
 
     /**
-     * Credential information that is found and used to authenticate 
-     * incoming request. Application may use this information when 
+     * Credential information that is found and used to authenticate
+     * incoming request. Application may use this information when
      * generating  authentication for the outgoing response.
      */
     pj_stun_req_cred_info   info;
@@ -497,7 +521,7 @@ PJ_DECL(pj_bool_t) pj_stun_session_use_fingerprint(pj_stun_session *sess,
 
 /**
  * Create a STUN request message. After the message has been successfully
- * created, application can send the message by calling 
+ * created, application can send the message by calling
  * pj_stun_session_send_msg().
  *
  * @param sess	    The STUN session instance.
@@ -518,7 +542,7 @@ PJ_DECL(pj_status_t) pj_stun_session_create_req(pj_stun_session *sess,
 
 /**
  * Create a STUN Indication message. After the message  has been successfully
- * created, application can send the message by calling 
+ * created, application can send the message by calling
  * pj_stun_session_send_msg().
  *
  * @param sess	    The STUN session instance.
@@ -535,8 +559,8 @@ PJ_DECL(pj_status_t) pj_stun_session_create_ind(pj_stun_session *sess,
 					        pj_stun_tx_data **p_tdata);
 
 /**
- * Create a STUN response message. After the message has been 
- * successfully created, application can send the message by calling 
+ * Create a STUN response message. After the message has been
+ * successfully created, application can send the message by calling
  * pj_stun_session_send_msg(). Alternatively application may use
  * pj_stun_session_respond() to create and send response in one function
  * call.
@@ -574,8 +598,8 @@ PJ_DECL(pj_status_t) pj_stun_session_create_res(pj_stun_session *sess,
  * @param sess	    The STUN session instance.
  * @param token	    Optional token which will be given back to application in
  *		    \a on_send_msg() callback and \a on_request_complete()
- *		    callback, if the message is a STUN request message. 
- *		    Internally this function will put the token in the 
+ *		    callback, if the message is a STUN request message.
+ *		    Internally this function will put the token in the
  *		    \a token field of pj_stun_tx_data, hence it will
  *		    overwrite any value that the application puts there.
  * @param cache_res If the message is a response message for an incoming
@@ -593,8 +617,8 @@ PJ_DECL(pj_status_t) pj_stun_session_create_res(pj_stun_session *sess,
  *		    be sent.
  *
  * @return	    PJ_SUCCESS on success, or the appropriate error code.
- *		    This function will return PJNATH_ESTUNDESTROYED if 
- *		    application has destroyed the session in 
+ *		    This function will return PJNATH_ESTUNDESTROYED if
+ *		    application has destroyed the session in
  *		    \a on_send_msg() callback.
  */
 PJ_DECL(pj_status_t) pj_stun_session_send_msg(pj_stun_session *sess,
@@ -623,30 +647,30 @@ PJ_DECL(pj_status_t) pj_stun_session_send_msg(pj_stun_session *sess,
  *		    be used.
  * @param token	    Optional token which will be given back to application in
  *		    \a on_send_msg() callback and \a on_request_complete()
- *		    callback, if the message is a STUN request message. 
- *		    Internally this function will put the token in the 
+ *		    callback, if the message is a STUN request message.
+ *		    Internally this function will put the token in the
  *		    \a token field of pj_stun_tx_data, hence it will
  *		    overwrite any value that the application puts there.
  * @param cache	    Specify whether session should cache this response for
  *		    future request retransmission. If TRUE, subsequent request
- *		    retransmission will be handled by the session and it 
+ *		    retransmission will be handled by the session and it
  *		    will not call request callback.
  * @param dst_addr  Destination address of the response (or equal to the
  *		    source address of the original request).
  * @param addr_len  Address length.
  *
  * @return	    PJ_SUCCESS on success, or the appropriate error code.
- *		    This function will return PJNATH_ESTUNDESTROYED if 
- *		    application has destroyed the session in 
+ *		    This function will return PJNATH_ESTUNDESTROYED if
+ *		    application has destroyed the session in
  *		    \a on_send_msg() callback.
  */
-PJ_DECL(pj_status_t) pj_stun_session_respond(pj_stun_session *sess, 
+PJ_DECL(pj_status_t) pj_stun_session_respond(pj_stun_session *sess,
 					     const pj_stun_rx_data *rdata,
-					     unsigned code, 
+					     unsigned code,
 					     const char *err_msg,
 					     void *token,
-					     pj_bool_t cache, 
-					     const pj_sockaddr_t *dst_addr, 
+					     pj_bool_t cache,
+					     const pj_sockaddr_t *dst_addr,
 					     unsigned addr_len);
 
 /**
@@ -663,8 +687,8 @@ PJ_DECL(pj_status_t) pj_stun_session_respond(pj_stun_session *sess,
  *		    callback. This error status MUST NOT be PJ_SUCCESS.
  *
  * @return	    PJ_SUCCESS if transaction is successfully cancelled.
- *		    This function will return PJNATH_ESTUNDESTROYED if 
- *		    application has destroyed the session in 
+ *		    This function will return PJNATH_ESTUNDESTROYED if
+ *		    application has destroyed the session in
  *		    \a on_request_complete() callback.
  */
 PJ_DECL(pj_status_t) pj_stun_session_cancel_req(pj_stun_session *sess,
@@ -683,7 +707,7 @@ PJ_DECL(pj_status_t) pj_stun_session_cancel_req(pj_stun_session *sess,
  *                  needs to be incremented.
  *
  * @return	    PJ_SUCCESS on success, or the appropriate error.
- *		    This function will return PJNATH_ESTUNDESTROYED if 
+ *		    This function will return PJNATH_ESTUNDESTROYED if
  *		    application has destroyed the session in \a on_send_msg()
  *		    callback.
  */
@@ -714,8 +738,8 @@ PJ_DECL(pj_status_t) pj_stun_session_retransmit_req(pj_stun_session *sess,
  *			STUN message (useful if packet is received via a
  *			stream oriented protocol).
  * @param token		Optional token which will be given back to application
- *			in the \a on_rx_request(), \a on_rx_indication() and 
- *			\a on_send_msg() callbacks. The token can be used to 
+ *			in the \a on_rx_request(), \a on_rx_indication() and
+ *			\a on_send_msg() callbacks. The token can be used to
  *			associate processing or incoming request or indication
  *			with some context.
  * @param src_addr	The source address of the packet, which will also
@@ -724,7 +748,7 @@ PJ_DECL(pj_status_t) pj_stun_session_retransmit_req(pj_stun_session *sess,
  * @param src_addr_len	Length of the source address.
  *
  * @return		PJ_SUCCESS on success, or the appropriate error code.
- *			This function will return PJNATH_ESTUNDESTROYED if 
+ *			This function will return PJNATH_ESTUNDESTROYED if
  *			application has destroyed the session in one of the
  *			callback.
  */
@@ -759,4 +783,3 @@ PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
 PJ_END_DECL
 
 #endif	/* __PJNATH_STUN_SESSION_H__ */
-
