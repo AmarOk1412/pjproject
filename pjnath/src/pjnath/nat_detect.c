@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <pjnath/nat_detect.h>
 #include <pjnath/errno.h>
@@ -110,8 +110,8 @@ typedef struct nat_detect_session
 } nat_detect_session;
 
 
-static void on_read_complete(pj_ioqueue_key_t *key, 
-                             pj_ioqueue_op_key_t *op_key, 
+static void on_read_complete(pj_ioqueue_key_t *key,
+                             pj_ioqueue_op_key_t *op_key,
                              pj_ssize_t bytes_read);
 static void on_request_complete(pj_stun_session *sess,
 			        pj_status_t status,
@@ -201,7 +201,7 @@ static pj_status_t get_local_interface(const pj_sockaddr *server,
     }
 
     pj_sockaddr_cp(local_addr, &tmp);
-    
+
     pj_sock_close(sock);
     return PJ_SUCCESS;
 }
@@ -240,7 +240,7 @@ PJ_DEF(pj_status_t) pj_stun_detect_nat_type2(const pj_sockaddr *server,
     /*
      * Init NAT detection session.
      */
-    pool = pj_pool_create(stun_cfg->pf, "natck%p", PJNATH_POOL_LEN_NATCK, 
+    pool = pj_pool_create(stun_cfg->pf, "natck%p", PJNATH_POOL_LEN_NATCK,
 			  PJNATH_POOL_INC_NATCK, NULL);
     if (!pool)
 	return PJ_ENOMEM;
@@ -316,7 +316,7 @@ PJ_DEF(pj_status_t) pj_stun_detect_nat_type2(const pj_sockaddr *server,
     pj_bzero(&ioqueue_cb, sizeof(ioqueue_cb));
     ioqueue_cb.on_read_complete = &on_read_complete;
 
-    status = pj_ioqueue_register_sock2(sess->pool, stun_cfg->ioqueue, 
+    status = pj_ioqueue_register_sock2(sess->pool, stun_cfg->ioqueue,
 				       sess->sock, sess->grp_lock, sess,
 				       &ioqueue_cb, &sess->key);
     if (status != PJ_SUCCESS)
@@ -329,7 +329,7 @@ PJ_DEF(pj_status_t) pj_stun_detect_nat_type2(const pj_sockaddr *server,
     sess_cb.on_request_complete = &on_request_complete;
     sess_cb.on_send_msg = &on_send_msg;
     status = pj_stun_session_create(stun_cfg, pool->obj_name, &sess_cb,
-				    PJ_FALSE, sess->grp_lock, &sess->stun_sess);
+				    PJ_FALSE, sess->grp_lock, &sess->stun_sess, /*TODO(sblin)?*/ PJ_STUN_TP_UDP);
     if (status != PJ_SUCCESS)
 	goto on_error;
 
@@ -358,7 +358,7 @@ on_error:
 
 static void sess_destroy(nat_detect_session *sess)
 {
-    if (sess->stun_sess) { 
+    if (sess->stun_sess) {
 	pj_stun_session_destroy(sess->stun_sess);
 	sess->stun_sess = NULL;
     }
@@ -421,8 +421,8 @@ static void end_session(nat_detect_session *sess,
 /*
  * Callback upon receiving packet from network.
  */
-static void on_read_complete(pj_ioqueue_key_t *key, 
-                             pj_ioqueue_op_key_t *op_key, 
+static void on_read_complete(pj_ioqueue_key_t *key,
+                             pj_ioqueue_op_key_t *op_key,
                              pj_ssize_t bytes_read)
 {
     nat_detect_session *sess;
@@ -439,19 +439,19 @@ static void on_read_complete(pj_ioqueue_key_t *key,
 
     if (bytes_read < 0) {
 	if (-bytes_read != PJ_STATUS_FROM_OS(OSERR_EWOULDBLOCK) &&
-	    -bytes_read != PJ_STATUS_FROM_OS(OSERR_EINPROGRESS) && 
-	    -bytes_read != PJ_STATUS_FROM_OS(OSERR_ECONNRESET)) 
+	    -bytes_read != PJ_STATUS_FROM_OS(OSERR_EINPROGRESS) &&
+	    -bytes_read != PJ_STATUS_FROM_OS(OSERR_ECONNRESET))
 	{
 	    /* Permanent error */
-	    end_session(sess, (pj_status_t)-bytes_read, 
+	    end_session(sess, (pj_status_t)-bytes_read,
 			PJ_STUN_NAT_TYPE_ERR_UNKNOWN);
 	    goto on_return;
 	}
 
     } else if (bytes_read > 0) {
 	pj_stun_session_on_rx_pkt(sess->stun_sess, sess->rx_pkt, bytes_read,
-				  PJ_STUN_IS_DATAGRAM|PJ_STUN_CHECK_PACKET, 
-				  NULL, NULL, 
+				  PJ_STUN_IS_DATAGRAM|PJ_STUN_CHECK_PACKET,
+				  NULL, NULL,
 				  &sess->src_addr, sess->src_addr_len);
     }
 
@@ -459,7 +459,7 @@ static void on_read_complete(pj_ioqueue_key_t *key,
     sess->rx_pkt_len = sizeof(sess->rx_pkt);
     sess->src_addr_len = sizeof(sess->src_addr);
     status = pj_ioqueue_recvfrom(key, op_key, sess->rx_pkt, &sess->rx_pkt_len,
-				 PJ_IOQUEUE_ALWAYS_ASYNC, 
+				 PJ_IOQUEUE_ALWAYS_ASYNC,
 				 &sess->src_addr, &sess->src_addr_len);
 
     if (status != PJ_EPENDING) {
@@ -594,11 +594,11 @@ static void on_request_complete(pj_stun_session *stun_sess,
     /* Send Test 1B only when Test 2 completes. Must not send Test 1B
      * before Test 2 completes to avoid creating mapping on the NAT.
      */
-    if (!sess->result[ST_TEST_1B].executed && 
+    if (!sess->result[ST_TEST_1B].executed &&
 	sess->result[ST_TEST_2].complete &&
 	sess->result[ST_TEST_2].status != PJ_SUCCESS &&
 	sess->result[ST_TEST_1].complete &&
-	sess->result[ST_TEST_1].status == PJ_SUCCESS) 
+	sess->result[ST_TEST_1].status == PJ_SUCCESS)
     {
 	cmp = pj_sockaddr_cmp(&sess->local_addr, &sess->result[ST_TEST_1].ma);
 	if (cmp != 0)
@@ -660,7 +660,7 @@ static void on_request_complete(pj_stun_session *stun_sess,
     switch (sess->result[ST_TEST_1].status) {
     case PJNATH_ESTUNTIMEDOUT:
 	/*
-	 * Test 1 has timed-out. Conclude with NAT_TYPE_BLOCKED. 
+	 * Test 1 has timed-out. Conclude with NAT_TYPE_BLOCKED.
 	 */
 	end_session(sess, PJ_SUCCESS, PJ_STUN_NAT_TYPE_BLOCKED);
 	break;
@@ -693,7 +693,7 @@ static void on_request_complete(pj_stun_session *stun_sess,
 		/*
 		 * We've got other error with Test 2.
 		 */
-		end_session(sess, sess->result[ST_TEST_2].status, 
+		end_session(sess, sess->result[ST_TEST_2].status,
 			    PJ_STUN_NAT_TYPE_ERR_UNKNOWN);
 		break;
 	    }
@@ -773,14 +773,14 @@ static void on_request_complete(pj_stun_session *stun_sess,
 			 * It could be that port 3489 is blocked, while the
 			 * NAT itself looks to be a Restricted one.
 			 */
-			end_session(sess, PJ_SUCCESS, 
+			end_session(sess, PJ_SUCCESS,
 				    PJ_STUN_NAT_TYPE_RESTRICTED);
 			break;
 		    default:
 			/* Can't distinguish between Symmetric and Port
 			 * Restricted, so set the type to Unknown
 			 */
-			end_session(sess, PJ_SUCCESS, 
+			end_session(sess, PJ_SUCCESS,
 				    PJ_STUN_NAT_TYPE_ERR_UNKNOWN);
 			break;
 		    }
@@ -798,7 +798,7 @@ static void on_request_complete(pj_stun_session *stun_sess,
 		/*
 		 * We've got other error with Test 2.
 		 */
-		end_session(sess, sess->result[ST_TEST_2].status, 
+		end_session(sess, sess->result[ST_TEST_2].status,
 			    PJ_STUN_NAT_TYPE_ERR_UNKNOWN);
 		break;
 	    }
@@ -808,7 +808,7 @@ static void on_request_complete(pj_stun_session *stun_sess,
 	/*
 	 * We've got other error with Test 1.
 	 */
-	end_session(sess, sess->result[ST_TEST_1].status, 
+	end_session(sess, sess->result[ST_TEST_1].status,
 		    PJ_STUN_NAT_TYPE_ERR_UNKNOWN);
 	break;
     }
@@ -840,15 +840,15 @@ static pj_status_t send_test(nat_detect_session *sess,
     tsx_id[2] = test_id;
 
     /* Create BIND request */
-    status = pj_stun_session_create_req(sess->stun_sess, 
+    status = pj_stun_session_create_req(sess->stun_sess,
 					PJ_STUN_BINDING_REQUEST, magic,
-					(pj_uint8_t*)tsx_id, 
+					(pj_uint8_t*)tsx_id,
 					&sess->result[test_id].tdata);
     if (status != PJ_SUCCESS)
 	goto on_error;
 
     /* Add CHANGE-REQUEST attribute */
-    status = pj_stun_msg_add_uint_attr(sess->pool, 
+    status = pj_stun_msg_add_uint_attr(sess->pool,
 				       sess->result[test_id].tdata->msg,
 				       PJ_STUN_ATTR_CHANGE_REQUEST,
 				       change_flag);
@@ -867,15 +867,15 @@ static pj_status_t send_test(nat_detect_session *sess,
 	sess->cur_server = &sess->server;
     }
 
-    PJ_LOG(5,(sess->pool->obj_name, 
-              "Performing %s to %s:%d", 
+    PJ_LOG(5,(sess->pool->obj_name,
+              "Performing %s to %s:%d",
 	      test_names[test_id],
 	      pj_sockaddr_print(sess->cur_server, addr, sizeof(addr), 2),
 	      pj_sockaddr_get_port(sess->cur_server)));
 
     /* Send the request */
     status = pj_stun_session_send_msg(sess->stun_sess, NULL, PJ_TRUE,
-				      PJ_TRUE, sess->cur_server, 
+				      PJ_TRUE, sess->cur_server,
 				      pj_sockaddr_get_len(sess->cur_server),
 				      sess->result[test_id].tdata);
     if (status != PJ_SUCCESS)
@@ -944,4 +944,3 @@ static void on_sess_timer(pj_timer_heap_t *th,
 	pj_assert(!"Invalid timer ID");
     }
 }
-

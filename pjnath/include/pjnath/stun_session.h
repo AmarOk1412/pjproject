@@ -420,7 +420,8 @@ PJ_DECL(pj_status_t) pj_stun_session_create(pj_stun_config *cfg,
 					    const pj_stun_session_cb *cb,
 					    pj_bool_t fingerprint,
 					    pj_grp_lock_t *grp_lock,
-					    pj_stun_session **p_sess);
+					    pj_stun_session **p_sess,
+                        pj_stun_tp_type conn_type);
 
 /**
  * Destroy the STUN session and all objects created in the context of

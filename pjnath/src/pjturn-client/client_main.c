@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <pjnath.h>
 #include <pjlib-util.h>
@@ -79,7 +79,7 @@ static void turn_on_rx_data(pj_turn_sock *relay,
 			    unsigned addr_len);
 static void turn_on_state(pj_turn_sock *relay, pj_turn_state_t old_state,
 			  pj_turn_state_t new_state);
-static pj_bool_t stun_sock_on_status(pj_stun_sock *stun_sock, 
+static pj_bool_t stun_sock_on_status(pj_stun_sock *stun_sock,
 				     pj_stun_sock_op op,
 				     pj_status_t status);
 static pj_bool_t stun_sock_on_rx_data(pj_stun_sock *stun_sock,
@@ -131,7 +131,7 @@ static int init()
     /* Create global ioqueue */
     CHECK( pj_ioqueue_create(g.pool, 16, &g.stun_config.ioqueue) );
 
-    /* 
+    /*
      * Create peers
      */
     for (i=0; i<(int)PJ_ARRAY_SIZE(g.peer); ++i) {
@@ -154,8 +154,8 @@ static int init()
 #endif
 
 	name[strlen(name)-1] = '0'+i;
-	status = pj_stun_sock_create(&g.stun_config, name, pj_AF_INET(), 
-				     &stun_sock_cb, &ss_cfg,
+	status = pj_stun_sock_create(&g.stun_config, name, pj_AF_INET(),
+				     PJ_STUN_TP_UDP, &stun_sock_cb, &ss_cfg,
 				     &g.peer[i], &g.peer[i].stun_sock);
 	if (status != PJ_SUCCESS) {
 	    my_perror("pj_stun_sock_create()", status);
@@ -169,7 +169,7 @@ static int init()
 	    server = pj_str(o.srv_addr);
 	    port = (pj_uint16_t)(o.srv_port?atoi(o.srv_port):PJ_STUN_PORT);
 	}
-	status = pj_stun_sock_start(g.peer[i].stun_sock, &server, 
+	status = pj_stun_sock_start(g.peer[i].stun_sock, &server,
 				    port,  NULL);
 	if (status != PJ_SUCCESS) {
 	    my_perror("pj_stun_sock_start()", status);
@@ -258,8 +258,8 @@ static pj_status_t create_relay(void)
     if (o.nameserver) {
 	pj_str_t ns = pj_str(o.nameserver);
 
-	status = pj_dns_resolver_create(&g.cp.factory, "resolver", 0, 
-					g.stun_config.timer_heap, 
+	status = pj_dns_resolver_create(&g.cp.factory, "resolver", 0,
+					g.stun_config.timer_heap,
 					g.stun_config.ioqueue, &g.resolver);
 	if (status != PJ_SUCCESS) {
 	    PJ_LOG(1,(THIS_FILE, "Error creating resolver (err=%d)", status));
@@ -276,7 +276,7 @@ static pj_status_t create_relay(void)
     pj_bzero(&rel_cb, sizeof(rel_cb));
     rel_cb.on_rx_data = &turn_on_rx_data;
     rel_cb.on_state = &turn_on_state;
-    CHECK( pj_turn_sock_create(&g.stun_config, pj_AF_INET(), 
+    CHECK( pj_turn_sock_create(&g.stun_config, pj_AF_INET(),
 			       (o.use_tcp? PJ_TURN_TP_TCP : PJ_TURN_TP_UDP),
 			       &rel_cb, 0,
 			       NULL, &g.relay) );
@@ -331,7 +331,7 @@ static void turn_on_rx_data(pj_turn_sock *relay,
 static void turn_on_state(pj_turn_sock *relay, pj_turn_state_t old_state,
 			  pj_turn_state_t new_state)
 {
-    PJ_LOG(3,(THIS_FILE, "State %s --> %s", pj_turn_state_name(old_state), 
+    PJ_LOG(3,(THIS_FILE, "State %s --> %s", pj_turn_state_name(old_state),
 	      pj_turn_state_name(new_state)));
 
     if (new_state == PJ_TURN_STATE_READY) {
@@ -344,7 +344,7 @@ static void turn_on_state(pj_turn_sock *relay, pj_turn_state_t old_state,
     }
 }
 
-static pj_bool_t stun_sock_on_status(pj_stun_sock *stun_sock, 
+static pj_bool_t stun_sock_on_status(pj_stun_sock *stun_sock,
 				     pj_stun_sock_op op,
 				     pj_status_t status)
 {
@@ -455,7 +455,7 @@ static void console_main(void)
 
 	if (fgets(input, sizeof(input), stdin) == NULL)
 	    break;
-	
+
 	switch (input[0]) {
 	case 'a':
 	    create_relay();
@@ -474,9 +474,9 @@ static void console_main(void)
 		peer = &g.peer[1];
 
 	    strcpy(input, "Hello from client");
-	    status = pj_turn_sock_sendto(g.relay, (const pj_uint8_t*)input, 
-					strlen(input)+1, 
-					&peer->mapped_addr, 
+	    status = pj_turn_sock_sendto(g.relay, (const pj_uint8_t*)input,
+					strlen(input)+1,
+					&peer->mapped_addr,
 					pj_sockaddr_get_len(&peer->mapped_addr));
 	    if (status != PJ_SUCCESS)
 		my_perror("turn_udp_sendto() failed", status);
@@ -618,14 +618,13 @@ int main(int argc, char *argv[])
 
     if ((status=init()) != 0)
 	goto on_return;
-    
+
     //if ((status=create_relay()) != 0)
     //	goto on_return;
-    
+
     console_main();
 
 on_return:
     client_shutdown();
     return status ? 1 : 0;
 }
-
