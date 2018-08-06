@@ -237,6 +237,7 @@ PJ_DEF(void) pj_ice_strans_cfg_default(pj_ice_strans_cfg *cfg)
     pj_bzero(cfg, sizeof(*cfg));
 
     cfg->af = pj_AF_INET();
+    cfg->protocol = PJ_ICE_TP_UDP;
     pj_stun_config_init(&cfg->stun_cfg, NULL, 0, NULL, NULL);
     pj_ice_strans_stun_cfg_default(&cfg->stun);
     pj_ice_strans_turn_cfg_default(&cfg->turn);
@@ -252,6 +253,7 @@ PJ_DEF(void) pj_ice_strans_stun_cfg_default(pj_ice_strans_stun_cfg *cfg)
     pj_bzero(cfg, sizeof(*cfg));
 
     cfg->af = pj_AF_INET();
+    cfg->conn_type = PJ_TURN_TP_TCP;
     cfg->port = PJ_STUN_PORT;
     cfg->max_host_cands = 64;
     cfg->ignore_stun_error = PJ_FALSE;

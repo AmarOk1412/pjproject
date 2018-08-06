@@ -43,7 +43,7 @@ static struct app_t
         pj_bool_t   regular;
         pj_str_t    stun_srv;
         pj_str_t    turn_srv;
-        pj_bool_t   turn_tcp;
+        pj_bool_t   ice_tcp;
         pj_str_t    turn_username;
         pj_str_t    turn_password;
         pj_bool_t   turn_fingerprint;
@@ -356,6 +356,12 @@ static pj_status_t icedemo_init(void)
             icedemo.ice_cfg.stun.port = PJ_STUN_PORT;
         }
 
+        /* Connection type to STUN server */
+        if (icedemo.opt.ice_tcp)
+            icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_TCP;
+        else
+            icedemo.ice_cfg.stun.conn_type = PJ_STUN_TP_UDP;
+
         /* For this demo app, configure longer STUN keep-alive time
          * so that it does't clutter the screen output.
          */
@@ -384,7 +390,7 @@ static pj_status_t icedemo_init(void)
         icedemo.ice_cfg.turn.auth_cred.data.static_cred.data = icedemo.opt.turn_password;
 
         /* Connection type to TURN server */
-        if (icedemo.opt.turn_tcp)
+        if (icedemo.opt.ice_tcp)
             icedemo.ice_cfg.turn.conn_type = PJ_TURN_TP_TCP;
         else
             icedemo.ice_cfg.turn.conn_type = PJ_TURN_TP_UDP;
@@ -393,6 +399,10 @@ static pj_status_t icedemo_init(void)
          * so that it does't clutter the screen output.
          */
         icedemo.ice_cfg.turn.alloc_param.ka_interval = KA_INTERVAL;
+    }
+
+    if (icedemo.opt.ice_tcp) {
+      icedemo.ice_cfg.protocol = PJ_ICE_TP_TCP;
     }
 
     /* -= That's it for now, initialization is complete =- */
@@ -430,6 +440,9 @@ static void icedemo_create_instance(void)
         icedemo_perror("error creating ice", status);
     else
         PJ_LOG(3,(THIS_FILE, "ICE instance successfully created"));
+
+
+    printf("####ENABLED TCP: %i\n", (icedemo.ice_cfg.protocol == PJ_ICE_TP_TCP));
 }
 
 /* Utility to nullify parsed remote info */
@@ -1237,7 +1250,7 @@ int main(int argc, char *argv[])
             icedemo.opt.turn_srv = pj_str(pj_optarg);
             break;
         case 'T':
-            icedemo.opt.turn_tcp = PJ_TRUE;
+            icedemo.opt.ice_tcp = PJ_TRUE;
             break;
         case 'u':
             icedemo.opt.turn_username = pj_str(pj_optarg);

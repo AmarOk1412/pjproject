@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_ICE_STRANS_H__
 #define __PJNATH_ICE_STRANS_H__
@@ -45,9 +45,9 @@ PJ_BEGIN_DECL
  * library.
  *
  * ICE stream transport, as represented by #pj_ice_strans structure, is an ICE
- * capable class for transporting media streams within a media session. 
+ * capable class for transporting media streams within a media session.
  * It consists of one or more transport sockets (typically two for RTP
- * based communication - one for RTP and one for RTCP), and an 
+ * based communication - one for RTP and one for RTCP), and an
  * \ref PJNATH_ICE_SESSION for performing connectivity checks among the.
  * various candidates of the transport addresses.
  *
@@ -56,7 +56,7 @@ PJ_BEGIN_DECL
  *
  * The steps below describe how to use ICE session:
  *
- *  - initialize a #pj_ice_strans_cfg structure. This contains various 
+ *  - initialize a #pj_ice_strans_cfg structure. This contains various
  *    settings for the ICE stream transport, and among other things contains
  *    the STUN and TURN settings.\n\n
  *  - create the instance with #pj_ice_strans_create(). Among other things,
@@ -66,13 +66,13 @@ PJ_BEGIN_DECL
  *	- instance of #pj_ice_strans_cb structure to report callbacks to
  *	  application.\n\n
  *  - while the #pj_ice_strans_create() call completes immediately, the
- *    initialization will be running in the background to gather the 
+ *    initialization will be running in the background to gather the
  *    candidates (for example STUN and TURN candidates, if they are enabled
  *    in the #pj_ice_strans_cfg setting). Application will be notified when
  *    the initialization completes in the \a on_ice_complete callback of
  *    the #pj_ice_strans_cb structure (the \a op argument of this callback
  *    will be PJ_ICE_STRANS_OP_INIT).\n\n
- *  - when media stream is to be started (for example, a call is to be 
+ *  - when media stream is to be started (for example, a call is to be
  *    started), create an ICE session by calling #pj_ice_strans_init_ice().\n\n
  *  - the application now typically will need to communicate local ICE
  *    information to remote host. It can achieve this by using the following
@@ -96,7 +96,7 @@ PJ_BEGIN_DECL
  *    state. Before ICE negotiation is started, the data will be sent using
  *    default candidate of the component. After negotiation is completed,
  *    data will be sent using the candidate from the successful/nominated
- *    pair. The ICE stream transport may not be able to send data while 
+ *    pair. The ICE stream transport may not be able to send data while
  *    negotiation is in progress.\n\n
  *  - application sends data by using #pj_ice_strans_sendto(). Incoming
  *    data will be reported in \a on_rx_data() callback of the
@@ -116,9 +116,33 @@ PJ_BEGIN_DECL
 /** Forward declaration for ICE stream transport. */
 typedef struct pj_ice_strans pj_ice_strans;
 
+/**
+ * ICE transport types, which will be used both to specify the connection
+ * type for reaching candidates and other client
+ */
+typedef enum pj_ice_tp_type
+{
+    /**
+     * UDP transport, which value corresponds to IANA protocol number.
+     */
+    PJ_ICE_TP_UDP = 17,
+
+    /**
+     * TCP transport, which value corresponds to IANA protocol number.
+     */
+    PJ_ICE_TP_TCP = 6,
+
+    /**
+     * TLS transport. The TLS transport will only be used as the connection
+     * type to reach the server and never as the allocation transport type.
+     */
+    PJ_ICE_TP_TLS = 255
+
+} pj_ice_tp_type;
+
 /** Transport operation types to be reported on \a on_status() callback */
 typedef enum pj_ice_strans_op
-{
+ {
     /** Initialization (candidate gathering) */
     PJ_ICE_STRANS_OP_INIT,
 
@@ -127,17 +151,18 @@ typedef enum pj_ice_strans_op
 
     /** This operation is used to report failure in keep-alive operation.
      *  Currently it is only used to report TURN Refresh failure.
-     */
+      */
     PJ_ICE_STRANS_OP_KEEP_ALIVE,
 
     /** IP address change notification from STUN keep-alive operation.
-     */
+      */
     PJ_ICE_STRANS_OP_ADDR_CHANGE
 
 } pj_ice_strans_op;
 
-/** 
- * This structure contains callbacks that will be called by the 
+
+/**
+ * This structure contains callbacks that will be called by the
  * ICE stream transport.
  */
 typedef struct pj_ice_strans_cb
@@ -155,19 +180,19 @@ typedef struct pj_ice_strans_cb
      * @param src_addr_len  Length of the source address.
      */
     void    (*on_rx_data)(pj_ice_strans *ice_st,
-			  unsigned comp_id, 
+			  unsigned comp_id,
 			  void *pkt, pj_size_t size,
 			  const pj_sockaddr_t *src_addr,
 			  unsigned src_addr_len);
 
     /**
      * Callback to report status of various ICE operations.
-     * 
+     *
      * @param ice_st	    The ICE stream transport.
      * @param op	    The operation which status is being reported.
      * @param status	    Operation status.
      */
-    void    (*on_ice_complete)(pj_ice_strans *ice_st, 
+    void    (*on_ice_complete)(pj_ice_strans *ice_st,
 			       pj_ice_strans_op op,
 			       pj_status_t status);
 
@@ -210,7 +235,7 @@ typedef struct pj_ice_strans_stun_cfg
     /**
      * Specify the STUN server domain or hostname or IP address.
      * If DNS SRV resolution is required, application must fill
-     * in this setting with the domain name of the STUN server 
+     * in this setting with the domain name of the STUN server
      * and set the resolver instance in the \a resolver field.
      * Otherwise if the \a resolver setting is not set, this
      * field will be resolved with hostname resolution and in
@@ -222,7 +247,7 @@ typedef struct pj_ice_strans_stun_cfg
      * When this field is empty, STUN mapped address resolution
      * will not be performed. In this case only ICE host candidates
      * will be added to the ICE transport, unless if \a no_host_cands
-     * field is set. In this case, both host and srflx candidates 
+     * field is set. In this case, both host and srflx candidates
      * are disabled.
      *
      * If there are more than one STUN candidates per ICE stream
@@ -253,6 +278,13 @@ typedef struct pj_ice_strans_stun_cfg
      */
     pj_bool_t		 ignore_stun_error;
 
+    /**
+     * Type of connection to the STUN server.
+     *
+     * Default is PJ_STUN_TP_UDP.
+     */
+    pj_stun_tp_type	 conn_type;
+
 } pj_ice_strans_stun_cfg;
 
 
@@ -278,7 +310,7 @@ typedef struct pj_ice_strans_turn_cfg
     /**
      * Specify the TURN server domain or hostname or IP address.
      * If DNS SRV resolution is required, application must fill
-     * in this setting with the domain name of the TURN server 
+     * in this setting with the domain name of the TURN server
      * and set the resolver instance in the \a resolver field.
      * Otherwise if the \a resolver setting is not set, this
      * field will be resolved with hostname resolution and in
@@ -346,6 +378,13 @@ typedef struct pj_ice_strans_cfg
      * The default value is pj_AF_INET() (IPv4).
      */
     int			 af;
+
+    /**
+     * If we want to use UDP or TCP as described by RFC 6544.
+     * This will discover candidates via TCP sockets. Then it will
+     * transfer messages on the transport via TCP.
+     */
+    pj_ice_tp_type protocol;
 
     /**
      * STUN configuration which contains the timer heap and
@@ -426,7 +465,7 @@ typedef struct pj_ice_strans_cfg
 	/**
 	 * QoS traffic type to be set on this transport. When application
 	 * wants to apply QoS tagging to the transport, it's preferable to
-	 * set this field rather than \a qos_param fields since this is 
+	 * set this field rather than \a qos_param fields since this is
 	 * more portable.
 	 *
 	 * Default value is PJ_QOS_TYPE_BEST_EFFORT.
@@ -434,7 +473,7 @@ typedef struct pj_ice_strans_cfg
 	pj_qos_type qos_type;
 
 	/**
-	 * Set the low level QoS parameters to the transport. This is a 
+	 * Set the low level QoS parameters to the transport. This is a
 	 * lower level operation than setting the \a qos_type field and
 	 * may not be supported on all platforms.
 	 *
@@ -526,7 +565,7 @@ typedef enum pj_ice_strans_state
 } pj_ice_strans_state;
 
 
-/** 
+/**
  * Initialize ICE transport configuration with default values.
  *
  * @param cfg		The configuration to be initialized.
@@ -534,7 +573,7 @@ typedef enum pj_ice_strans_state
 PJ_DECL(void) pj_ice_strans_cfg_default(pj_ice_strans_cfg *cfg);
 
 
-/** 
+/**
  * Initialize ICE STUN transport configuration with default values.
  *
  * @param cfg		The configuration to be initialized.
@@ -542,7 +581,7 @@ PJ_DECL(void) pj_ice_strans_cfg_default(pj_ice_strans_cfg *cfg);
 PJ_DECL(void) pj_ice_strans_stun_cfg_default(pj_ice_strans_stun_cfg *cfg);
 
 
-/** 
+/**
  * Initialize ICE TURN transport configuration with default values.
  *
  * @param cfg		The configuration to be initialized.
@@ -564,7 +603,7 @@ PJ_DECL(void) pj_ice_strans_cfg_copy(pj_pool_t *pool,
 
 /**
  * Create and initialize the ICE stream transport with the specified
- * parameters. 
+ * parameters.
  *
  * @param name		Optional name for logging identification.
  * @param cfg		Configuration.
@@ -640,8 +679,8 @@ PJ_DECL(pj_status_t) pj_ice_strans_get_options(pj_ice_strans *ice_st,
 					       pj_ice_sess_options *opt);
 
 /**
- * Specify various options for this ICE stream transport. Application 
- * should call #pj_ice_strans_get_options() to initialize the options 
+ * Specify various options for this ICE stream transport. Application
+ * should call #pj_ice_strans_get_options() to initialize the options
  * with their default values.
  *
  * @param ice_st	The ICE stream transport.
@@ -700,7 +739,7 @@ PJ_DECL(pj_bool_t) pj_ice_strans_has_sess(pj_ice_strans *ice_st);
  *
  * @param ice_st	The ICE stream transport.
  *
- * @return		PJ_TRUE if ICE session has been created and ICE 
+ * @return		PJ_TRUE if ICE session has been created and ICE
  *			negotiation negotiation is in progress.
  */
 PJ_DECL(pj_bool_t) pj_ice_strans_sess_is_running(pj_ice_strans *ice_st);
@@ -721,7 +760,7 @@ PJ_DECL(pj_bool_t) pj_ice_strans_sess_is_complete(pj_ice_strans *ice_st);
  * Get the current/running component count. If ICE negotiation has not
  * been started, the number of components will be equal to the number
  * when the ICE stream transport was created. Once negotiation been
- * started, the number of components will be the lowest number of 
+ * started, the number of components will be the lowest number of
  * component between local and remote agents.
  *
  * @param ice_st	The ICE stream transport.
@@ -844,12 +883,12 @@ PJ_DECL(pj_status_t) pj_ice_strans_change_role(pj_ice_strans *ice_st,
  * This function must be called once application has received remote
  * candidate list (typically from the remote SDP). This function pairs
  * local candidates with remote candidates, and starts ICE connectivity
- * checks. The ICE session/transport will then notify the application 
- * via the callback when ICE connectivity checks completes, either 
+ * checks. The ICE session/transport will then notify the application
+ * via the callback when ICE connectivity checks completes, either
  * successfully or with failure.
  *
  * @param ice_st	The ICE stream transport.
- * @param rem_ufrag	Remote ufrag, as seen in the SDP received from 
+ * @param rem_ufrag	Remote ufrag, as seen in the SDP received from
  *			the remote agent.
  * @param rem_passwd	Remote password, as seen in the SDP received from
  *			the remote agent.
@@ -875,7 +914,7 @@ PJ_DECL(pj_status_t) pj_ice_strans_start_ice(pj_ice_strans *ice_st,
  * @return		The valid pair as ICE checklist structure if the
  *			pair exist.
  */
-PJ_DECL(const pj_ice_sess_check*) 
+PJ_DECL(const pj_ice_sess_check*)
 pj_ice_strans_get_valid_pair(const pj_ice_strans *ice_st,
 			     unsigned comp_id);
 
@@ -889,7 +928,7 @@ pj_ice_strans_get_valid_pair(const pj_ice_strans *ice_st,
  * disconnected, and reinitialize the ICE stream transport for subsequent
  * call with #pj_ice_strans_init_ice()/#pj_ice_strans_start_ice(). In this
  * case, the ICE stream transport will maintain the internal sockets and
- * continue to send STUN keep-alive packets and TURN Refresh request to 
+ * continue to send STUN keep-alive packets and TURN Refresh request to
  * keep the NAT binding/TURN allocation open and to detect change in STUN
  * mapped address.
  *
@@ -905,15 +944,15 @@ PJ_DECL(pj_status_t) pj_ice_strans_stop_ice(pj_ice_strans *ice_st);
 
 
 /**
- * Send outgoing packet using this transport. 
+ * Send outgoing packet using this transport.
  * Application can send data (normally RTP or RTCP packets) at any time
  * by calling this function. This function takes a destination
  * address as one of the arguments, and this destination address should
  * be taken from the default transport address of the component (that is
- * the address in SDP c= and m= lines, or in a=rtcp attribute). 
- * If ICE negotiation is in progress, this function will send the data 
+ * the address in SDP c= and m= lines, or in a=rtcp attribute).
+ * If ICE negotiation is in progress, this function will send the data
  * to the destination address. Otherwise if ICE negotiation has completed
- * successfully, this function will send the data to the nominated remote 
+ * successfully, this function will send the data to the nominated remote
  * address, as negotiated by ICE.
  *
  * @param ice_st	The ICE stream transport.
@@ -943,4 +982,3 @@ PJ_END_DECL
 
 
 #endif	/* __PJNATH_ICE_STRANS_H__ */
-
