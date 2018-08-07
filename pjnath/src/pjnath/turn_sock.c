@@ -119,7 +119,6 @@ PJ_DEF(pj_status_t) pj_turn_sock_create(pj_stun_config *cfg,
                                         void *user_data,
                                         pj_turn_sock **p_turn_sock)
 {
-    printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" );
     pj_turn_sock *turn_sock;
     pj_turn_session_cb sess_cb;
     pj_turn_sock_cfg default_setting;
@@ -522,7 +521,6 @@ static pj_bool_t on_connect_complete(pj_activesock_t *asock,
     if (turn_sock->conn_type != PJ_TURN_TP_UDP) {
         PJ_LOG(5,(turn_sock->obj_name, "TCP connected"));
     }
-    printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
 
     /* Kick start pending read operation */
     status = pj_activesock_start_read(asock, turn_sock->pool,

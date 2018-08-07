@@ -88,7 +88,17 @@ typedef enum pj_stun_sock_op
     /**
      * IP address change notification from the keep-alive operation.
      */
-    PJ_STUN_SOCK_MAPPED_ADDR_CHANGE
+    PJ_STUN_SOCK_MAPPED_ADDR_CHANGE,
+
+    /**
+     * STUN session was destroyed.
+     */
+    PJ_STUN_SESS_DESTROYED,
+
+    /**
+     * TCP fails to connect
+     */
+    PJ_STUN_TCP_CONNECT_ERROR
 
 
 } pj_stun_sock_op;

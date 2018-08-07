@@ -41,38 +41,47 @@ enum { MAX_BIND_RETRY = 100 };
 
 struct pj_stun_sock
 {
-    char                *obj_name;        /* Log identification            */
-    pj_pool_t                *pool;                /* Pool                            */
-    void                *user_data;        /* Application user data    */
-    pj_bool_t                 is_destroying; /* Destroy already called   */
-    int                         af;                /* Address family            */
-    pj_stun_tp_type         conn_type;
-    pj_stun_config         stun_cfg;        /* STUN config (ioqueue etc)*/
-    pj_stun_sock_cb         cb;                /* Application callbacks    */
+    char                   *obj_name;       /* Log identification         */
+    pj_pool_t              *pool;           /* Pool                       */
+    void                   *user_data;      /* Application user data      */
+    pj_bool_t              is_destroying;   /* Destroy already called     */
+    int                    af;              /* Address family             */
+    pj_stun_tp_type        conn_type;
+    pj_stun_sock_cfg       setting;
+    pj_stun_config         cfg;             /* STUN config (ioqueue etc)  */
+    pj_stun_sock_cb        cb;              /* Application callbacks      */
 
-    int                         ka_interval;        /* Keep alive interval            */
-    pj_timer_entry         ka_timer;        /* Keep alive timer.            */
+    int                    ka_interval;     /* Keep alive interval        */
+    pj_timer_entry         ka_timer;        /* Keep alive timer.          */
 
-    pj_sockaddr                 srv_addr;        /* Resolved server addr            */
-    pj_sockaddr                 mapped_addr;        /* Our public address            */
+    pj_sockaddr            srv_addr;        /* Resolved server addr       */
+    pj_sockaddr            mapped_addr;     /* Our public address         */
 
-    pj_dns_srv_async_query *q;                /* Pending DNS query            */
-    pj_sock_t                 sock_fd;        /* Socket descriptor            */
-    pj_activesock_t        *active_sock;        /* Active socket object            */
-    pj_ioqueue_op_key_t         send_key;        /* Default send key for app */
-    pj_ioqueue_op_key_t         int_send_key;        /* Send key for internal    */
+    pj_dns_srv_async_query *q;              /* Pending DNS query          */
+    pj_sock_t              sock_fd;         /* Socket descriptor          */
+    pj_activesock_t        *active_sock;    /* Active socket object       */
+    pj_ioqueue_op_key_t    send_key;        /* Default send key for app   */
+    pj_ioqueue_op_key_t    int_send_key;    /* Send key for internal      */
 
-    pj_uint16_t                 tsx_id[6];        /* .. to match STUN msg            */
-    pj_stun_session        *stun_sess;        /* STUN session                    */
-    pj_grp_lock_t        *grp_lock;        /* Session group lock            */
+    pj_uint16_t            tsx_id[6];       /* .. to match STUN msg       */
+    pj_stun_session        *stun_sess;      /* STUN session               */
+    pj_grp_lock_t          *grp_lock;       /* Session group lock         */
 };
 
 /*
  * Prototypes for static functions
  */
 
+
+static pj_bool_t
+on_connect_complete(pj_activesock_t *asock, pj_status_t status);
+
 /* Destructor for group lock */
 static void stun_sock_destructor(void *obj);
+
+static pj_bool_t sess_fail(pj_stun_sock *stun_sock,
+                           pj_stun_sock_op op,
+                           pj_status_t status);
 
 /* This callback is called by the STUN session to send packet */
 static pj_status_t sess_on_send_msg(pj_stun_session *sess,
@@ -162,35 +171,38 @@ static pj_bool_t pj_stun_sock_cfg_is_valid(const pj_stun_sock_cfg *cfg)
 /*
  * Create the STUN transport using the specified configuration.
  */
-PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
+PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
                                          const char *name,
                                          int af,
                                          pj_stun_tp_type conn_type,
                                          const pj_stun_sock_cb *cb,
-                                         const pj_stun_sock_cfg *cfg,
+                                         const pj_stun_sock_cfg *setting,
                                          void *user_data,
                                          pj_stun_sock **p_stun_sock)
 {
-    pj_pool_t *pool;
+  /**/
     pj_stun_sock *stun_sock;
+    pj_stun_session_cb sess_cb;
     pj_stun_sock_cfg default_cfg;
-    pj_sockaddr bound_addr;
-    unsigned i;
-    pj_uint16_t max_bind_retry;
+    pj_pool_t *pool;
     pj_status_t status;
-    int sock_type;
 
-    PJ_ASSERT_RETURN(stun_cfg && cb && p_stun_sock, PJ_EINVAL);
+    PJ_ASSERT_RETURN(cfg && cb && p_stun_sock, PJ_EINVAL);
     PJ_ASSERT_RETURN(af==pj_AF_INET()||af==pj_AF_INET6(), PJ_EAFNOTSUP);
-    PJ_ASSERT_RETURN(!cfg || pj_stun_sock_cfg_is_valid(cfg), PJ_EINVAL);
+    PJ_ASSERT_RETURN(!setting || pj_stun_sock_cfg_is_valid(setting), PJ_EINVAL);
     PJ_ASSERT_RETURN(cb->on_status, PJ_EINVAL);
     PJ_ASSERT_RETURN(conn_type!=PJ_STUN_TP_TCP || PJ_HAS_TCP, PJ_EINVAL);
 
-    status = pj_stun_config_check_valid(stun_cfg);
+    status = pj_stun_config_check_valid(cfg);
     if (status != PJ_SUCCESS)
         return status;
 
-    if (name == NULL) {
+    if (!setting) {
+        pj_stun_sock_cfg_default(&default_cfg);
+        setting = &default_cfg;
+    }
+
+    if (!name) {
       switch (conn_type) {
       case PJ_STUN_TP_UDP:
           name = "udpstun%p";
@@ -205,14 +217,11 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
       }
     }
 
-    if (cfg == NULL) {
-        pj_stun_sock_cfg_default(&default_cfg);
-        cfg = &default_cfg;
-    }
-
-
-    /* Create structure */
-    pool = pj_pool_create(stun_cfg->pf, name, 256, 512, NULL);
+    /* Create and init basic data structure */
+    const PJNATH_POOL_LEN_STUN_SOCK = 256;
+    const PJNATH_POOL_INC_STUN_SOCK = 512;
+    pool = pj_pool_create(cfg->pf, name, PJNATH_POOL_LEN_STUN_SOCK,
+                          PJNATH_POOL_INC_STUN_SOCK, NULL);
     stun_sock = PJ_POOL_ZALLOC_T(pool, pj_stun_sock);
     stun_sock->pool = pool;
     stun_sock->obj_name = pool->obj_name;
@@ -220,20 +229,18 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     stun_sock->af = af;
     stun_sock->conn_type = conn_type;
     stun_sock->sock_fd = PJ_INVALID_SOCKET;
-    pj_memcpy(&stun_sock->stun_cfg, stun_cfg, sizeof(*stun_cfg));
+
+    /* Copy STUN config (this contains ioqueue, timer heap, etc.) */
+    pj_memcpy(&stun_sock->cfg, cfg, sizeof(*cfg));
+
+    /* Copy setting (QoS parameters etc */
+    pj_memcpy(&stun_sock->setting, setting, sizeof(*setting));
+
+    /* Set callback */
     pj_memcpy(&stun_sock->cb, cb, sizeof(*cb));
 
-    if (stun_sock->conn_type == PJ_STUN_TP_UDP)
-      sock_type = pj_SOCK_DGRAM();
-    else
-      sock_type = pj_SOCK_STREAM();
-
-    stun_sock->ka_interval = cfg->ka_interval;
-    if (stun_sock->ka_interval == 0)
-        stun_sock->ka_interval = PJ_STUN_KEEP_ALIVE_SEC;
-
-    if (cfg->grp_lock) {
-        stun_sock->grp_lock = cfg->grp_lock;
+    if (setting->grp_lock) {
+        stun_sock->grp_lock = setting->grp_lock;
     } else {
         status = pj_grp_lock_create(pool, NULL, &stun_sock->grp_lock);
         if (status != PJ_SUCCESS) {
@@ -246,51 +253,87 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     pj_grp_lock_add_handler(stun_sock->grp_lock, pool, stun_sock,
                             &stun_sock_destructor);
 
+    /* Create STUN session */
+    {
+        pj_stun_session_cb sess_cb;
+
+        pj_bzero(&sess_cb, sizeof(sess_cb));
+        // TODO(sblin)
+        sess_cb.on_request_complete = &sess_on_request_complete;
+        sess_cb.on_send_msg = &sess_on_send_msg;
+        status = pj_stun_session_create(&stun_sock->cfg,
+                                        stun_sock->obj_name,
+                                        &sess_cb, PJ_FALSE,
+                                        stun_sock->grp_lock,
+                                        &stun_sock->stun_sess,
+                                        conn_type);
+        if (status != PJ_SUCCESS) {
+            pj_stun_sock_destroy(stun_sock);
+            return status;
+        }
+    }
+
+    pj_sockaddr bound_addr;
+    pj_uint16_t max_bind_retry;
+    int sock_type;
+
+    if (stun_sock->conn_type == PJ_STUN_TP_UDP)
+      sock_type = pj_SOCK_DGRAM();
+    else
+      sock_type = pj_SOCK_STREAM();
+
+    stun_sock->ka_interval = setting->ka_interval;
+    if (stun_sock->ka_interval == 0)
+        stun_sock->ka_interval = PJ_STUN_KEEP_ALIVE_SEC;
     /* Create socket and bind socket */
     status = pj_sock_socket(af, sock_type, 0, &stun_sock->sock_fd);
-    if (status != PJ_SUCCESS)
-        goto on_error;
+    if (status != PJ_SUCCESS) {
+        pj_stun_sock_destroy(stun_sock);
+        return status;
+    }
 
     /* Apply QoS, if specified */
-    status = pj_sock_apply_qos2(stun_sock->sock_fd, cfg->qos_type,
-                                &cfg->qos_params, 2, stun_sock->obj_name,
+    status = pj_sock_apply_qos2(stun_sock->sock_fd, setting->qos_type,
+                                &setting->qos_params, 2, stun_sock->obj_name,
                                 NULL);
-    if (status != PJ_SUCCESS && !cfg->qos_ignore_error)
-        goto on_error;
+    if (status != PJ_SUCCESS && !setting->qos_ignore_error) {
+        pj_stun_sock_destroy(stun_sock);
+        return status;
+    }
 
     /* Apply socket buffer size */
-    if (cfg->so_rcvbuf_size > 0) {
-        unsigned sobuf_size = cfg->so_rcvbuf_size;
+    if (setting->so_rcvbuf_size > 0) {
+        unsigned sobuf_size = setting->so_rcvbuf_size;
         status = pj_sock_setsockopt_sobuf(stun_sock->sock_fd, pj_SO_RCVBUF(),
                                           PJ_TRUE, &sobuf_size);
         if (status != PJ_SUCCESS) {
             pj_perror(3, stun_sock->obj_name, status,
                       "Failed setting SO_RCVBUF");
         } else {
-            if (sobuf_size < cfg->so_rcvbuf_size) {
+            if (sobuf_size < setting->so_rcvbuf_size) {
                 PJ_LOG(4, (stun_sock->obj_name,
                            "Warning! Cannot set SO_RCVBUF as configured, "
                            "now=%d, configured=%d",
-                           sobuf_size, cfg->so_rcvbuf_size));
+                           sobuf_size, setting->so_rcvbuf_size));
             } else {
                 PJ_LOG(5, (stun_sock->obj_name, "SO_RCVBUF set to %d",
                            sobuf_size));
             }
         }
     }
-    if (cfg->so_sndbuf_size > 0) {
-        unsigned sobuf_size = cfg->so_sndbuf_size;
+    if (setting->so_sndbuf_size > 0) {
+        unsigned sobuf_size = setting->so_sndbuf_size;
         status = pj_sock_setsockopt_sobuf(stun_sock->sock_fd, pj_SO_SNDBUF(),
                                           PJ_TRUE, &sobuf_size);
         if (status != PJ_SUCCESS) {
             pj_perror(3, stun_sock->obj_name, status,
                       "Failed setting SO_SNDBUF");
         } else {
-            if (sobuf_size < cfg->so_sndbuf_size) {
+            if (sobuf_size < setting->so_sndbuf_size) {
                 PJ_LOG(4, (stun_sock->obj_name,
                            "Warning! Cannot set SO_SNDBUF as configured, "
                            "now=%d, configured=%d",
-                           sobuf_size, cfg->so_sndbuf_size));
+                           sobuf_size, setting->so_sndbuf_size));
             } else {
                 PJ_LOG(5, (stun_sock->obj_name, "SO_SNDBUF set to %d",
                            sobuf_size));
@@ -300,18 +343,20 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
 
     /* Bind socket */
     max_bind_retry = MAX_BIND_RETRY;
-    if (cfg->port_range && cfg->port_range < max_bind_retry)
-        max_bind_retry = cfg->port_range;
+    if (setting->port_range && setting->port_range < max_bind_retry)
+        max_bind_retry = setting->port_range;
     pj_sockaddr_init(af, &bound_addr, NULL, 0);
-    if (cfg->bound_addr.addr.sa_family == pj_AF_INET() ||
-        cfg->bound_addr.addr.sa_family == pj_AF_INET6())
+    if (setting->bound_addr.addr.sa_family == pj_AF_INET() ||
+        setting->bound_addr.addr.sa_family == pj_AF_INET6())
     {
-        pj_sockaddr_cp(&bound_addr, &cfg->bound_addr);
+        pj_sockaddr_cp(&bound_addr, &setting->bound_addr);
     }
     status = pj_sock_bind_random(stun_sock->sock_fd, &bound_addr,
-                                 cfg->port_range, max_bind_retry);
-    if (status != PJ_SUCCESS)
-        goto on_error;
+                                 setting->port_range, max_bind_retry);
+    if (status != PJ_SUCCESS) {
+        pj_stun_sock_destroy(stun_sock);
+        return status;
+    }
 
     /* Init active socket configuration */
     {
@@ -320,23 +365,25 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
 
         pj_activesock_cfg_default(&activesock_cfg);
         activesock_cfg.grp_lock = stun_sock->grp_lock;
-        activesock_cfg.async_cnt = cfg->async_cnt;
+        activesock_cfg.async_cnt = setting->async_cnt;
         activesock_cfg.concurrency = 0;
 
         /* Create the active socket */
         pj_bzero(&activesock_cb, sizeof(activesock_cb));
         activesock_cb.on_data_recvfrom = &on_data_recvfrom;
         activesock_cb.on_data_sent = &on_data_sent;
+        activesock_cb.on_connect_complete = &on_connect_complete;
         status = pj_activesock_create(pool, stun_sock->sock_fd,
                                       sock_type,
-                                      &activesock_cfg, stun_cfg->ioqueue,
+                                      &activesock_cfg, cfg->ioqueue,
                                       &activesock_cb, stun_sock,
                                       &stun_sock->active_sock);
 
-        if (status != PJ_SUCCESS)
-            goto on_error;
+        if (status != PJ_SUCCESS) {
+            pj_stun_sock_destroy(stun_sock);
+            return status;
+        }
 
-/* TODO(sblin) */
 #if PJ_HAS_TCP
         // TODO NOT HERE!!!!
         char addrinfo[PJ_INET6_ADDRSTRLEN+10];
@@ -346,8 +393,10 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
 
             status = pj_sock_getsockname(stun_sock->sock_fd, &bound_addr,
                                          &addr_len);
-            if (status != PJ_SUCCESS)
-                goto on_error;
+            if (status != PJ_SUCCESS) {
+                pj_stun_sock_destroy(stun_sock);
+                return status;
+            }
 
             pj_sockaddr_print(&bound_addr, addrinfo,
                               PJ_INET6_ADDRSTRLEN, 3);
@@ -361,25 +410,21 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
         } else {
             status = PJ_SUCCESS;
         }
-        if (status != PJ_SUCCESS && status != PJ_EPENDING) {
+        if (status == PJ_SUCCESS) {
+            on_connect_complete(stun_sock->active_sock, PJ_SUCCESS);
+        } else if (status != PJ_EPENDING) {
             pj_perror(3, stun_sock->pool->obj_name, status,
                       "Failed to connect to %s", addrinfo);
             pj_stun_sock_destroy(stun_sock);
             return;
         }
+#else
+        on_connect_complete(stun_sock->active_sock, PJ_SUCCESS);
 #endif
-/**/
-        PJ_LOG(5,(stun_sock->pool->obj_name, "Connected"));
-
-
-        if (status != PJ_SUCCESS)
-            goto on_error;
-
-        /* Start asynchronous read operations */
-        status = pj_activesock_start_recvfrom(stun_sock->active_sock, pool,
-                                              cfg->max_pkt_size, 0);
-        if (status != PJ_SUCCESS)
-            goto on_error;
+        if (status != PJ_SUCCESS) {
+            pj_stun_sock_destroy(stun_sock);
+            return status;
+        }
 
         /* Init send keys */
         pj_ioqueue_op_key_init(&stun_sock->send_key,
@@ -388,22 +433,50 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
                                sizeof(stun_sock->int_send_key));
     }
 
-    /* Create STUN session */
-    {
-        pj_stun_session_cb sess_cb;
+    /* Done */
+    *p_stun_sock = stun_sock;
+    return PJ_SUCCESS;
+}
 
-        pj_bzero(&sess_cb, sizeof(sess_cb));
-        sess_cb.on_request_complete = &sess_on_request_complete;
-        sess_cb.on_send_msg = &sess_on_send_msg;
-        status = pj_stun_session_create(&stun_sock->stun_cfg,
-                                        stun_sock->obj_name,
-                                        &sess_cb, PJ_FALSE,
-                                        stun_sock->grp_lock,
-                                        &stun_sock->stun_sess,
-                                        conn_type);
-        if (status != PJ_SUCCESS)
-            goto on_error;
+/*
+ * Notification when outgoing TCP socket has been connected.
+ */
+static pj_bool_t
+on_connect_complete(pj_activesock_t *asock, pj_status_t status)
+{
+    printf("CONNECTED CALLBACK!!!!!!!!!!!!!!!!");
+    pj_stun_sock *stun_sock;
+    stun_sock = (pj_stun_sock*) pj_activesock_get_user_data(asock);
+    if (!stun_sock)
+        return PJ_FALSE;
+
+    pj_grp_lock_acquire(stun_sock->grp_lock);
+
+    /* TURN session may have already been destroyed here.
+     * See ticket #1557 (http://trac.pjsip.org/repos/ticket/1557).
+     */
+    if (!stun_sock->stun_sess) {
+        sess_fail(stun_sock, PJ_STUN_SESS_DESTROYED, status);
+        pj_grp_lock_release(stun_sock->grp_lock);
+        return PJ_FALSE;
     }
+
+    if (status != PJ_SUCCESS) {
+        sess_fail(stun_sock, PJ_STUN_TCP_CONNECT_ERROR, status);
+        pj_grp_lock_release(stun_sock->grp_lock);
+        return PJ_FALSE;
+    }
+
+    if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
+        PJ_LOG(5,(stun_sock->obj_name, "TCP connected"));
+    }
+
+    /* Start asynchronous read operations */
+    pj_status_t result = pj_activesock_start_recvfrom(asock, stun_sock->pool,
+                                                      stun_sock->setting.max_pkt_size, 0);
+    if (result != PJ_SUCCESS) {
+        return PJ_FALSE;
+    };
 
     /* Associate us with the STUN session */
     pj_stun_session_set_user_data(stun_sock->stun_sess, stun_sock);
@@ -413,6 +486,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
      * STUN messages we sent with STUN messages that the application sends.
      * The last 16bit value in the array is a counter.
      */
+    unsigned i;
     for (i=0; i<PJ_ARRAY_SIZE(stun_sock->tsx_id); ++i) {
         stun_sock->tsx_id[i] = (pj_uint16_t) pj_rand();
     }
@@ -423,13 +497,8 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *stun_cfg,
     stun_sock->ka_timer.cb = &ka_timer_cb;
     stun_sock->ka_timer.user_data = stun_sock;
 
-    /* Done */
-    *p_stun_sock = stun_sock;
-    return PJ_SUCCESS;
-
-on_error:
-    pj_stun_sock_destroy(stun_sock);
-    return status;
+    pj_grp_lock_release(stun_sock->grp_lock);
+    return PJ_TRUE;
 }
 
 /* Start socket. */
@@ -549,7 +618,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_destroy(pj_stun_sock *stun_sock)
     }
 
     stun_sock->is_destroying = PJ_TRUE;
-    pj_timer_heap_cancel_if_active(stun_sock->stun_cfg.timer_heap,
+    pj_timer_heap_cancel_if_active(stun_sock->cfg.timer_heap,
                                    &stun_sock->ka_timer, 0);
 
     if (stun_sock->active_sock != NULL) {
@@ -928,7 +997,7 @@ on_return:
 /* Schedule keep-alive timer */
 static void start_ka_timer(pj_stun_sock *stun_sock)
 {
-    pj_timer_heap_cancel_if_active(stun_sock->stun_cfg.timer_heap,
+    pj_timer_heap_cancel_if_active(stun_sock->cfg.timer_heap,
                                    &stun_sock->ka_timer, 0);
 
     pj_assert(stun_sock->ka_interval != 0);
@@ -938,7 +1007,7 @@ static void start_ka_timer(pj_stun_sock *stun_sock)
         delay.sec = stun_sock->ka_interval;
         delay.msec = 0;
 
-        pj_timer_heap_schedule_w_grp_lock(stun_sock->stun_cfg.timer_heap,
+        pj_timer_heap_schedule_w_grp_lock(stun_sock->cfg.timer_heap,
                                           &stun_sock->ka_timer,
                                           &delay, PJ_TRUE,
                                           stun_sock->grp_lock);
