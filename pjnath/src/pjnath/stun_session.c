@@ -49,6 +49,8 @@ struct pj_stun_session
 
     pj_stun_tx_data	 pending_request_list;
     pj_stun_tx_data	 cached_response_list;
+
+    pj_stun_tp_type	 conn_type;
 };
 
 #define SNAME(s_)		    ((s_)->pool->obj_name)
@@ -508,8 +510,6 @@ PJ_DEF(pj_status_t) pj_stun_session_create( pj_stun_config *cfg,
 					    pj_stun_session **p_sess,
               pj_stun_tp_type conn_type)
 {
-  // TODO(sblin)
-  printf("TODO(SBLIN)CONNTYPE %i\n", conn_type==PJ_STUN_TP_TCP);
     pj_pool_t	*pool;
     pj_stun_session *sess;
     pj_status_t status;
@@ -529,6 +529,7 @@ PJ_DEF(pj_status_t) pj_stun_session_create( pj_stun_config *cfg,
     pj_memcpy(&sess->cb, cb, sizeof(*cb));
     sess->use_fingerprint = fingerprint;
     sess->log_flag = 0xFFFF;
+    sess->conn_type = conn_type;
 
     if (grp_lock) {
 	sess->grp_lock = grp_lock;
