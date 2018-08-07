@@ -180,7 +180,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
                                          void *user_data,
                                          pj_stun_sock **p_stun_sock)
 {
-  /**/
     pj_stun_sock *stun_sock;
     pj_stun_session_cb sess_cb;
     pj_stun_sock_cfg default_cfg;
@@ -273,67 +272,84 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
         }
     }
 
+    pj_stun_sock_alloc(stun_sock);
+
+    /* Done */
+    *p_stun_sock = stun_sock;
+    return PJ_SUCCESS;
+}
+
+/*
+ * Initialize.
+ */
+PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
+{
+    pj_status_t status;
     pj_sockaddr bound_addr;
     pj_uint16_t max_bind_retry;
     int sock_type;
+
+    pj_grp_lock_acquire(stun_sock->grp_lock);
 
     if (stun_sock->conn_type == PJ_STUN_TP_UDP)
       sock_type = pj_SOCK_DGRAM();
     else
       sock_type = pj_SOCK_STREAM();
 
-    stun_sock->ka_interval = setting->ka_interval;
+    stun_sock->ka_interval = stun_sock->setting.ka_interval;
     if (stun_sock->ka_interval == 0)
         stun_sock->ka_interval = PJ_STUN_KEEP_ALIVE_SEC;
     /* Create socket and bind socket */
-    status = pj_sock_socket(af, sock_type, 0, &stun_sock->sock_fd);
+    status = pj_sock_socket(stun_sock->af, sock_type, 0, &stun_sock->sock_fd);
     if (status != PJ_SUCCESS) {
         pj_stun_sock_destroy(stun_sock);
+        pj_grp_lock_release(stun_sock->grp_lock);
         return status;
     }
 
     /* Apply QoS, if specified */
-    status = pj_sock_apply_qos2(stun_sock->sock_fd, setting->qos_type,
-                                &setting->qos_params, 2, stun_sock->obj_name,
+    status = pj_sock_apply_qos2(stun_sock->sock_fd, stun_sock->setting.qos_type,
+                                &stun_sock->setting.qos_params, 2, stun_sock->obj_name,
                                 NULL);
-    if (status != PJ_SUCCESS && !setting->qos_ignore_error) {
+    if (status != PJ_SUCCESS && !stun_sock->setting.qos_ignore_error) {
         pj_stun_sock_destroy(stun_sock);
+        pj_grp_lock_release(stun_sock->grp_lock);
         return status;
     }
 
     /* Apply socket buffer size */
-    if (setting->so_rcvbuf_size > 0) {
-        unsigned sobuf_size = setting->so_rcvbuf_size;
+    if (stun_sock->setting.so_rcvbuf_size > 0) {
+        unsigned sobuf_size = stun_sock->setting.so_rcvbuf_size;
         status = pj_sock_setsockopt_sobuf(stun_sock->sock_fd, pj_SO_RCVBUF(),
                                           PJ_TRUE, &sobuf_size);
         if (status != PJ_SUCCESS) {
             pj_perror(3, stun_sock->obj_name, status,
                       "Failed setting SO_RCVBUF");
         } else {
-            if (sobuf_size < setting->so_rcvbuf_size) {
+            if (sobuf_size < stun_sock->setting.so_rcvbuf_size) {
                 PJ_LOG(4, (stun_sock->obj_name,
                            "Warning! Cannot set SO_RCVBUF as configured, "
                            "now=%d, configured=%d",
-                           sobuf_size, setting->so_rcvbuf_size));
+                           sobuf_size, stun_sock->setting.so_rcvbuf_size));
             } else {
                 PJ_LOG(5, (stun_sock->obj_name, "SO_RCVBUF set to %d",
                            sobuf_size));
             }
         }
     }
-    if (setting->so_sndbuf_size > 0) {
-        unsigned sobuf_size = setting->so_sndbuf_size;
+    if (stun_sock->setting.so_sndbuf_size > 0) {
+        unsigned sobuf_size = stun_sock->setting.so_sndbuf_size;
         status = pj_sock_setsockopt_sobuf(stun_sock->sock_fd, pj_SO_SNDBUF(),
                                           PJ_TRUE, &sobuf_size);
         if (status != PJ_SUCCESS) {
             pj_perror(3, stun_sock->obj_name, status,
                       "Failed setting SO_SNDBUF");
         } else {
-            if (sobuf_size < setting->so_sndbuf_size) {
+            if (sobuf_size < stun_sock->setting.so_sndbuf_size) {
                 PJ_LOG(4, (stun_sock->obj_name,
                            "Warning! Cannot set SO_SNDBUF as configured, "
                            "now=%d, configured=%d",
-                           sobuf_size, setting->so_sndbuf_size));
+                           sobuf_size, stun_sock->setting.so_sndbuf_size));
             } else {
                 PJ_LOG(5, (stun_sock->obj_name, "SO_SNDBUF set to %d",
                            sobuf_size));
@@ -343,18 +359,19 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
 
     /* Bind socket */
     max_bind_retry = MAX_BIND_RETRY;
-    if (setting->port_range && setting->port_range < max_bind_retry)
-        max_bind_retry = setting->port_range;
-    pj_sockaddr_init(af, &bound_addr, NULL, 0);
-    if (setting->bound_addr.addr.sa_family == pj_AF_INET() ||
-        setting->bound_addr.addr.sa_family == pj_AF_INET6())
+    if (stun_sock->setting.port_range && stun_sock->setting.port_range < max_bind_retry)
+        max_bind_retry = stun_sock->setting.port_range;
+    pj_sockaddr_init(stun_sock->af, &bound_addr, NULL, 0);
+    if (stun_sock->setting.bound_addr.addr.sa_family == pj_AF_INET() ||
+        stun_sock->setting.bound_addr.addr.sa_family == pj_AF_INET6())
     {
-        pj_sockaddr_cp(&bound_addr, &setting->bound_addr);
+        pj_sockaddr_cp(&bound_addr, &stun_sock->setting.bound_addr);
     }
     status = pj_sock_bind_random(stun_sock->sock_fd, &bound_addr,
-                                 setting->port_range, max_bind_retry);
+                                 stun_sock->setting.port_range, max_bind_retry);
     if (status != PJ_SUCCESS) {
         pj_stun_sock_destroy(stun_sock);
+        pj_grp_lock_release(stun_sock->grp_lock);
         return status;
     }
 
@@ -365,7 +382,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
 
         pj_activesock_cfg_default(&activesock_cfg);
         activesock_cfg.grp_lock = stun_sock->grp_lock;
-        activesock_cfg.async_cnt = setting->async_cnt;
+        activesock_cfg.async_cnt = stun_sock->setting.async_cnt;
         activesock_cfg.concurrency = 0;
 
         /* Create the active socket */
@@ -373,36 +390,25 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
         activesock_cb.on_data_recvfrom = &on_data_recvfrom;
         activesock_cb.on_data_sent = &on_data_sent;
         activesock_cb.on_connect_complete = &on_connect_complete;
-        status = pj_activesock_create(pool, stun_sock->sock_fd,
+        status = pj_activesock_create(stun_sock->pool, stun_sock->sock_fd,
                                       sock_type,
-                                      &activesock_cfg, cfg->ioqueue,
+                                      &activesock_cfg, stun_sock->cfg.ioqueue,
                                       &activesock_cb, stun_sock,
                                       &stun_sock->active_sock);
 
         if (status != PJ_SUCCESS) {
             pj_stun_sock_destroy(stun_sock);
+            pj_grp_lock_release(stun_sock->grp_lock);
             return status;
         }
 
 #if PJ_HAS_TCP
-        // TODO NOT HERE!!!!
         char addrinfo[PJ_INET6_ADDRSTRLEN+10];
+        pj_sockaddr_print(&bound_addr, addrinfo,
+                          PJ_INET6_ADDRSTRLEN, 3);
+        PJ_LOG(5,(stun_sock->pool->obj_name, "Connecting to %s", addrinfo));
         if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
-            pj_sockaddr bound_addr;
-            int addr_len = sizeof(bound_addr);
-
-            status = pj_sock_getsockname(stun_sock->sock_fd, &bound_addr,
-                                         &addr_len);
-            if (status != PJ_SUCCESS) {
-                pj_stun_sock_destroy(stun_sock);
-                return status;
-            }
-
-            pj_sockaddr_print(&bound_addr, addrinfo,
-                              PJ_INET6_ADDRSTRLEN, 3);
-            PJ_LOG(5,(stun_sock->pool->obj_name, "Connecting to %s", addrinfo));
-
-            status=pj_activesock_start_connect(
+            status = pj_activesock_start_connect(
                                         stun_sock->active_sock,
                                         stun_sock->pool,
                                         &bound_addr,
@@ -416,26 +422,16 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
             pj_perror(3, stun_sock->pool->obj_name, status,
                       "Failed to connect to %s", addrinfo);
             pj_stun_sock_destroy(stun_sock);
+            pj_grp_lock_release(stun_sock->grp_lock);
             return;
         }
 #else
         on_connect_complete(stun_sock->active_sock, PJ_SUCCESS);
 #endif
-        if (status != PJ_SUCCESS) {
-            pj_stun_sock_destroy(stun_sock);
-            return status;
-        }
-
-        /* Init send keys */
-        pj_ioqueue_op_key_init(&stun_sock->send_key,
-                               sizeof(stun_sock->send_key));
-        pj_ioqueue_op_key_init(&stun_sock->int_send_key,
-                               sizeof(stun_sock->int_send_key));
     }
 
-    /* Done */
-    *p_stun_sock = stun_sock;
-    return PJ_SUCCESS;
+    pj_grp_lock_release(stun_sock->grp_lock);
+    return status;
 }
 
 /*
@@ -496,6 +492,19 @@ on_connect_complete(pj_activesock_t *asock, pj_status_t status)
     /* Init timer entry */
     stun_sock->ka_timer.cb = &ka_timer_cb;
     stun_sock->ka_timer.user_data = stun_sock;
+
+    if (status != PJ_SUCCESS) {
+      printf("xkfdkfdjskjkfdkjsfkjdskjfdkjfkdjkjdsf\n");
+        pj_stun_sock_destroy(stun_sock);
+        pj_grp_lock_release(stun_sock->grp_lock);
+        return status;
+    }
+
+    /* Init send keys */
+    pj_ioqueue_op_key_init(&stun_sock->send_key,
+                           sizeof(stun_sock->send_key));
+    pj_ioqueue_op_key_init(&stun_sock->int_send_key,
+                           sizeof(stun_sock->int_send_key));
 
     pj_grp_lock_release(stun_sock->grp_lock);
     return PJ_TRUE;
@@ -765,51 +774,44 @@ PJ_DEF(pj_status_t) pj_stun_sock_get_info( pj_stun_sock *stun_sock,
         return status;
     }
 
-    /* If socket is bound to a specific interface, then only put that
-     * interface in the alias list. Otherwise query all the interfaces
-     * in the host.
+    /* Query all the interfaces in the host, because STUN is compatible with TCP
      */
-    if (pj_sockaddr_has_addr(&info->bound_addr)) {
-        info->alias_cnt = 1;
-        pj_sockaddr_cp(&info->aliases[0], &info->bound_addr);
-    } else {
-        pj_sockaddr def_addr;
-        pj_uint16_t port = pj_sockaddr_get_port(&info->bound_addr);
-        unsigned i;
+    pj_sockaddr def_addr;
+    pj_uint16_t port = pj_sockaddr_get_port(&info->bound_addr);
+    unsigned i;
 
-        /* Get the default address */
-        status = pj_gethostip(stun_sock->af, &def_addr);
-        if (status != PJ_SUCCESS) {
-            pj_grp_lock_release(stun_sock->grp_lock);
-            return status;
-        }
+    /* Get the default address */
+    status = pj_gethostip(stun_sock->af, &def_addr);
+    if (status != PJ_SUCCESS) {
+        pj_grp_lock_release(stun_sock->grp_lock);
+        return status;
+    }
 
-        pj_sockaddr_set_port(&def_addr, port);
+    pj_sockaddr_set_port(&def_addr, port);
 
-        /* Enum all IP interfaces in the host */
-        info->alias_cnt = PJ_ARRAY_SIZE(info->aliases);
-        status = pj_enum_ip_interface(stun_sock->af, &info->alias_cnt,
-                                      info->aliases);
-        if (status != PJ_SUCCESS) {
-            pj_grp_lock_release(stun_sock->grp_lock);
-            return status;
-        }
+    /* Enum all IP interfaces in the host */
+    info->alias_cnt = PJ_ARRAY_SIZE(info->aliases);
+    status = pj_enum_ip_interface(stun_sock->af, &info->alias_cnt,
+                                  info->aliases);
+    if (status != PJ_SUCCESS) {
+        pj_grp_lock_release(stun_sock->grp_lock);
+        return status;
+    }
 
-        /* Set the port number for each address.
-         */
-        for (i=0; i<info->alias_cnt; ++i) {
-            pj_sockaddr_set_port(&info->aliases[i], port);
-        }
+    /* Set the port number for each address.
+     */
+    for (i=0; i<info->alias_cnt; ++i) {
+        pj_sockaddr_set_port(&info->aliases[i], port);
+    }
 
-        /* Put the default IP in the first slot */
-        for (i=0; i<info->alias_cnt; ++i) {
-            if (pj_sockaddr_cmp(&info->aliases[i], &def_addr)==0) {
-                if (i!=0) {
-                    pj_sockaddr_cp(&info->aliases[i], &info->aliases[0]);
-                    pj_sockaddr_cp(&info->aliases[0], &def_addr);
-                }
-                break;
+    /* Put the default IP in the first slot */
+    for (i=0; i<info->alias_cnt; ++i) {
+        if (pj_sockaddr_cmp(&info->aliases[i], &def_addr)==0) {
+            if (i!=0) {
+                pj_sockaddr_cp(&info->aliases[i], &info->aliases[0]);
+                pj_sockaddr_cp(&info->aliases[0], &def_addr);
             }
+            break;
         }
     }
 
