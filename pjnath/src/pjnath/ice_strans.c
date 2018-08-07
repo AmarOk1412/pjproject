@@ -364,8 +364,6 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
         }
     }
 
-    printf("/* Init TURN socket */\n" );
-
 
     /* Init TURN socket */
     pj_bzero(&turn_sock_cb, sizeof(turn_sock_cb));
@@ -589,7 +587,6 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     /* Add local addresses to host candidates, unless max_host_cands
      * is set to zero.
      */
-    printf("Add local addresses to host candidates, unless max_host_cands\n");
     if (stun_cfg->max_host_cands) {
 	pj_stun_sock_info stun_sock_info;
 	unsigned i, cand_cnt = 0;
@@ -741,7 +738,6 @@ static pj_status_t create_comp(pj_ice_strans *ice_st, unsigned comp_id)
     }
 
     /* Create TURN relay if configured. */
-    printf("/* Create TURN relay if configured */\n" );
     for (i=0; i<ice_st->cfg.turn_tp_cnt; ++i) {
         status = add_update_turn(ice_st, comp, i);
         if (status != PJ_SUCCESS) {
