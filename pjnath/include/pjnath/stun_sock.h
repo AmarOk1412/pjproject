@@ -219,6 +219,11 @@ typedef struct pj_stun_sock_info
      */
     pj_sockaddr	    aliases[PJ_ICE_ST_MAX_CAND];
 
+    /**
+     * The tranport type of the socket
+     */
+    pj_stun_tp_type conn_type;
+
 } pj_stun_sock_info;
 
 

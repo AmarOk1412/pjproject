@@ -366,6 +366,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
         stun_sock->setting.bound_addr.addr.sa_family == pj_AF_INET6())
     {
         pj_sockaddr_cp(&bound_addr, &stun_sock->setting.bound_addr);
+
     }
     status = pj_sock_bind_random(stun_sock->sock_fd, &bound_addr,
                                  stun_sock->setting.port_range, max_bind_retry);
@@ -440,7 +441,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
 static pj_bool_t
 on_connect_complete(pj_activesock_t *asock, pj_status_t status)
 {
-    printf("CONNECTED CALLBACK!!!!!!!!!!!!!!!!");
     pj_stun_sock *stun_sock;
     stun_sock = (pj_stun_sock*) pj_activesock_get_user_data(asock);
     if (!stun_sock)
@@ -494,7 +494,6 @@ on_connect_complete(pj_activesock_t *asock, pj_status_t status)
     stun_sock->ka_timer.user_data = stun_sock;
 
     if (status != PJ_SUCCESS) {
-      printf("xkfdkfdjskjkfdkjsfkjdskjfdkjfkdjkjdsf\n");
         pj_stun_sock_destroy(stun_sock);
         pj_grp_lock_release(stun_sock->grp_lock);
         return status;
@@ -769,6 +768,8 @@ PJ_DEF(pj_status_t) pj_stun_sock_get_info( pj_stun_sock *stun_sock,
 
     pj_grp_lock_acquire(stun_sock->grp_lock);
 
+    info->conn_type = stun_sock->conn_type;
+
     /* Copy STUN server address and mapped address */
     pj_memcpy(&info->srv_addr, &stun_sock->srv_addr,
               sizeof(pj_sockaddr));
@@ -972,7 +973,7 @@ static void sess_on_request_complete(pj_stun_session *sess,
     /* Determine if mapped address has changed, and save the new mapped
      * address and call callback if so
      */
-    mapped_changed = !pj_sockaddr_has_addr(&stun_sock->mapped_addr) ||
+   mapped_changed = !pj_sockaddr_has_addr(&stun_sock->mapped_addr) ||
                      pj_sockaddr_cmp(&stun_sock->mapped_addr,
                                      &mapped_attr->sockaddr) != 0;
     if (mapped_changed) {
@@ -983,6 +984,8 @@ static void sess_on_request_complete(pj_stun_session *sess,
                       "STUN mapped address found/changed: %s",
                       pj_sockaddr_print(&mapped_attr->sockaddr,
                                         addrinfo, sizeof(addrinfo), 3)));
+
+            printf("Mapped address: %s", addrinfo);
         }
 
         pj_sockaddr_cp(&stun_sock->mapped_addr, &mapped_attr->sockaddr);

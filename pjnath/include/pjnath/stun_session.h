@@ -780,6 +780,38 @@ PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
  * @}
  */
 
+ struct pj_stun_session
+ {
+     pj_stun_config        *cfg;
+     pj_pool_t                *pool;
+     pj_grp_lock_t        *grp_lock;
+     pj_stun_session_cb         cb;
+     void                *user_data;
+     pj_bool_t                 is_destroying;
+
+     pj_bool_t                 use_fingerprint;
+
+     pj_pool_t                *rx_pool;
+
+ #if PJ_LOG_MAX_LEVEL >= 5
+     char                 dump_buf[1000];
+ #endif
+     unsigned                 log_flag;
+
+     pj_stun_auth_type         auth_type;
+     pj_stun_auth_cred         cred;
+     int                         auth_retry;
+     pj_str_t                 next_nonce;
+     pj_str_t                 server_realm;
+
+     pj_str_t                 srv_name;
+
+     pj_stun_tx_data         pending_request_list;
+     pj_stun_tx_data         cached_response_list;
+
+     pj_stun_tp_type         conn_type;
+ };
+
 
 PJ_END_DECL
 
