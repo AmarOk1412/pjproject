@@ -392,6 +392,8 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
         cand->local_pref = RELAY_PREF;
         cand->transport_id = tp_id;
         cand->comp_id = (pj_uint8_t) comp->comp_id;
+        // TODO(sblin) really passive?
+        cand->transport = turn_cfg->conn_type == PJ_TURN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
     }
 
     /* Allocate and initialize TURN socket data */
@@ -507,6 +509,8 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     cand->local_pref = SRFLX_PREF;
     cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
     cand->comp_id = (pj_uint8_t) comp->comp_id;
+    // TODO(sblin) really passive?
+    cand->transport = stun_cfg->conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
 
     /* Allocate and initialize STUN socket data */
     data = PJ_POOL_ZALLOC_T(ice_st->pool, sock_user_data);
@@ -554,6 +558,12 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
         }
 
         /* Update and commit the srflx candidate. */
+
+        char addstr[PJ_INET6_ADDRSTRLEN+10];
+        pj_sockaddr_print(&stun_sock_info.aliases[0], addstr,
+                                  sizeof(addstr), 3);
+        printf("add_stun_and_host 1: %s", addstr);
+
         pj_sockaddr_cp(&cand->base_addr, &stun_sock_info.aliases[0]);
         pj_sockaddr_cp(&cand->rel_addr, &cand->base_addr);
         pj_ice_calc_foundation(ice_st->pool, &cand->foundation,
@@ -616,7 +626,6 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
                 }
             }
             pj_sockaddr_print(addr, addrinfo, sizeof(addrinfo), 3);
-            printf("addrinfo %s\n", &addrinfo);
 
             /* Ignore IPv6 link-local address */
             if (stun_cfg->af == pj_AF_INET6()) {
@@ -632,6 +641,13 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
             cand->local_pref = HOST_PREF;
             cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
             cand->comp_id = (pj_uint8_t) comp->comp_id;
+            // TODO(sblin) really passive?
+            cand->transport = stun_sock_info.conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
+
+            char addstr[PJ_INET6_ADDRSTRLEN+10];
+            pj_sockaddr_print(addr, addstr,
+                                      sizeof(addstr), 3);
+            printf("add_stun_and_host 2: %s", addstr);
             pj_sockaddr_cp(&cand->addr, addr);
             pj_sockaddr_cp(&cand->base_addr, addr);
             pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
@@ -1155,13 +1171,19 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
             }
 
             /* Add the candidate */
+
+            char addstr[PJ_INET6_ADDRSTRLEN+10];
+            pj_sockaddr_print(&cand->addr, addstr,
+                                      sizeof(addstr), 3);
+            printf("pj_ice_strans_init_ice: %s", addstr);
             status = pj_ice_sess_add_cand(ice_st->ice, comp->comp_id,
                                           cand->transport_id, cand->type,
                                           cand->local_pref,
                                           &cand->foundation, &cand->addr,
                                           &cand->base_addr,  &cand->rel_addr,
                                           pj_sockaddr_get_len(&cand->addr),
-                                          (unsigned*)&ice_cand_id);
+                                          (unsigned*)&ice_cand_id,
+                                          cand->transport);
             if (status != PJ_SUCCESS)
                 goto on_error;
         }

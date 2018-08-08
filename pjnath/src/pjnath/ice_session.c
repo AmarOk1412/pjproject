@@ -716,7 +716,8 @@ PJ_DEF(pj_status_t) pj_ice_sess_add_cand(pj_ice_sess *ice,
                                          const pj_sockaddr_t *base_addr,
                                          const pj_sockaddr_t *rel_addr,
                                          int addr_len,
-                                         unsigned *p_cand_id)
+                                         unsigned *p_cand_id,
+                                         pj_ice_cand_transport transport)
 {
     pj_ice_sess_cand *lcand;
     pj_status_t status = PJ_SUCCESS;
@@ -739,6 +740,7 @@ PJ_DEF(pj_status_t) pj_ice_sess_add_cand(pj_ice_sess *ice,
     lcand->comp_id = (pj_uint8_t)comp_id;
     lcand->transport_id = (pj_uint8_t)transport_id;
     lcand->type = type;
+    lcand->transport = transport;
     pj_strdup(ice->pool, &lcand->foundation, foundation);
     lcand->prio = CALC_CAND_PRIO(ice, type, local_pref, lcand->comp_id);
     pj_sockaddr_cp(&lcand->addr, addr);
@@ -2402,7 +2404,8 @@ static void on_stun_request_complete(pj_stun_session *stun_sess,
                                       &check->lcand->base_addr,
                                       &check->lcand->base_addr,
                                       pj_sockaddr_get_len(&xaddr->sockaddr),
-                                      &cand_id);
+                                      &cand_id,
+                                      stun_sess->conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP: PJ_CAND_TCP_PASSIVE);
         if (status != PJ_SUCCESS) {
             check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED,
                             status);

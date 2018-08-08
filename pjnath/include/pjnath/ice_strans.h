@@ -116,30 +116,6 @@ PJ_BEGIN_DECL
 /** Forward declaration for ICE stream transport. */
 typedef struct pj_ice_strans pj_ice_strans;
 
-/**
- * ICE transport types, which will be used both to specify the connection
- * type for reaching candidates and other client
- */
-typedef enum pj_ice_tp_type
-{
-    /**
-     * UDP transport, which value corresponds to IANA protocol number.
-     */
-    PJ_ICE_TP_UDP = 17,
-
-    /**
-     * TCP transport, which value corresponds to IANA protocol number.
-     */
-    PJ_ICE_TP_TCP = 6,
-
-    /**
-     * TLS transport. The TLS transport will only be used as the connection
-     * type to reach the server and never as the allocation transport type.
-     */
-    PJ_ICE_TP_TLS = 255
-
-} pj_ice_tp_type;
-
 /** Transport operation types to be reported on \a on_status() callback */
 typedef enum pj_ice_strans_op
  {
