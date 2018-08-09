@@ -1082,6 +1082,13 @@ static pj_status_t prune_checklist(pj_ice_sess *ice,
                 return PJNATH_EICENOHOSTCAND;
             }
         }
+        /* Section 6.2, RFC 6544 (https://tools.ietf.org/html/rfc6544)
+         * When the agent prunes the check list, it MUST also remove any pair
+         * for which the local candidate is a passive TCP candidate
+         */
+        if(clist->checks[i].lcand->transport == PJ_CAND_TCP_PASSIVE) {
+            continue;
+        }
     }
 
     /* Next remove a pair if its local and remote candidates are identical
@@ -1679,6 +1686,16 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
 
             pj_ice_sess_cand *lcand = &ice->lcand[i];
             pj_ice_sess_cand *rcand = &ice->rcand[j];
+
+
+            char addstr[PJ_INET6_ADDRSTRLEN+10];
+            pj_sockaddr_print(&lcand->addr, addstr,
+                                      sizeof(addstr), 3);
+            printf("add_stun_and_host locale: %s\n", addstr);
+            pj_sockaddr_print(&rcand->addr, addstr,
+                                      sizeof(addstr), 3);
+            printf("add_stun_and_host remote: %s\n", addstr);
+
             pj_ice_sess_check *chk = NULL;
 
             if (clist->count >= PJ_ICE_MAX_CHECKS) {
@@ -1697,6 +1714,28 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
             {
                 continue;
             }
+
+            /* Section 6.2, RFC 6544 (https://tools.ietf.org/html/rfc6544)
+             * As with UDP, check lists are formed only by full ICE implementations.
+             * When forming candidate pairs, the following types of TCP candidates
+             * can be paired with each other:
+             *
+             * Local           Remote
+             * Candidate       Candidate
+             * ---------------------------
+             * tcp-so          tcp-so
+             * tcp-active      tcp-passive
+             * tcp-passive     tcp-active
+             */
+            if ((lcand->transport == PJ_CAND_UDP && rcand->transport != PJ_CAND_UDP)
+                || (lcand->transport == PJ_CAND_TCP_PASSIVE && rcand->transport != PJ_CAND_TCP_ACTIVE)
+                || (lcand->transport == PJ_CAND_TCP_ACTIVE && rcand->transport != PJ_CAND_TCP_PASSIVE)
+                || (lcand->transport == PJ_CAND_TCP_SO && rcand->transport != PJ_CAND_TCP_SO))
+            {
+                continue;
+            }
+
+            printf("Added\n");
 
 
             chk->lcand = lcand;
