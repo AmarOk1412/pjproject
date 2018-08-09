@@ -543,37 +543,17 @@ static int print_cand(char buffer[], unsigned maxlen,
     char *p = buffer;
     int printed;
 
-    printf("%i is the new tcp\n", cand->transport);
-
-    PRINT("a=candidate:%.*s %u %s %u %s %u typ ",
+    PRINT("a=candidate:%.*s %u UDP %u %s %u typ ",
           (int)cand->foundation.slen,
           cand->foundation.ptr,
           (unsigned)cand->comp_id,
-          cand->transport == PJ_CAND_UDP? "UDP" : "TCP",
           cand->prio,
           pj_sockaddr_print(&cand->addr, ipaddr,
                             sizeof(ipaddr), 0),
           (unsigned)pj_sockaddr_get_port(&cand->addr));
 
-    PRINT("%s",
+    PRINT("%s\n",
           pj_ice_get_cand_type_name(cand->type));
-
-    if (cand->transport != PJ_CAND_UDP) {
-      PRINT(" tcptype");
-      switch (cand->transport) {
-        case PJ_CAND_TCP_ACTIVE:
-        PRINT(" active");
-        break;
-        case PJ_CAND_TCP_PASSIVE:
-        PRINT(" passive");
-        break;
-        case PJ_CAND_TCP_SO:
-        default:
-        PRINT(" so");
-        break;
-      }
-    }
-    PRINT("\n");
 
     if (p == buffer+maxlen)
         return -PJ_ETOOSMALL;
