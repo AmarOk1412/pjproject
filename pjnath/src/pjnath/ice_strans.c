@@ -711,7 +711,6 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
             if (!add_tcp_active_cand) {
                 add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_UDP);
             } else {
-                add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_TCP_PASSIVE);
                 /** RFC 6544, Section 4.1:
                  * First, agents SHOULD obtain host candidates as described in
                  * Section 5.1.  Then, each agent SHOULD "obtain" (allocate a
@@ -721,6 +720,12 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
                  * candidates, but they are used for the creation of the check lists.
                  */
                 add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_TCP_ACTIVE);
+                /** Adding active candidates first fulfill the Section 4.3 of the RFC 6544
+                 * (for non lite implementation):
+                 * it is RECOMMENDED for an offering full agent to select an
+                 * active candidate as the default candidate
+                 */
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_TCP_PASSIVE);
             }
         }
     }
