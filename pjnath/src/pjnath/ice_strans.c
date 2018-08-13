@@ -452,6 +452,7 @@ static pj_bool_t ice_cand_equals(pj_ice_sess_cand *lcand,
         || lcand->transport_id != rcand->transport_id
         || lcand->local_pref != rcand->local_pref
         || lcand->prio != rcand->prio
+        || lcand->transport != rcand->transport
         || pj_sockaddr_cmp(&lcand->addr, &rcand->addr) != 0
         || pj_sockaddr_cmp(&lcand->base_addr, &rcand->base_addr) != 0)
     {
@@ -459,6 +460,114 @@ static pj_bool_t ice_cand_equals(pj_ice_sess_cand *lcand,
     }
 
     return PJ_TRUE;
+}
+
+static pj_bool_t
+add_local_candidate(pj_ice_sess_cand *cand, unsigned idx,
+                    pj_stun_sock_info stun_sock_info, pj_ice_strans *ice_st,
+                    pj_ice_strans_comp *comp, pj_ice_cand_transport transport)
+{
+  pj_ice_strans_stun_cfg *stun_cfg = &ice_st->cfg.stun_tp[idx];
+  unsigned j;
+  pj_bool_t cand_duplicate = PJ_FALSE;
+  char addrinfo[PJ_INET6_ADDRSTRLEN+10];
+  const pj_sockaddr *addr = &stun_sock_info.aliases[idx];
+
+  /* Leave one candidate for relay */
+  if (comp->cand_cnt >= PJ_ICE_ST_MAX_CAND-1) {
+      PJ_LOG(4,(ice_st->obj_name, "Too many host candidates"));
+      return PJ_FALSE;
+  }
+
+  /* Ignore loopback addresses if cfg->stun.loop_addr is unset */
+  if (stun_cfg->loop_addr==PJ_FALSE) {
+      if (stun_cfg->af == pj_AF_INET() &&
+          (pj_ntohl(addr->ipv4.sin_addr.s_addr)>>24)==127)
+      {
+          return PJ_TRUE;
+      }
+      else if (stun_cfg->af == pj_AF_INET6()) {
+          pj_in6_addr in6addr = {{0}};
+          in6addr.s6_addr[15] = 1;
+          if (pj_memcmp(&in6addr, &addr->ipv6.sin6_addr,
+                        sizeof(in6addr))==0)
+          {
+              return PJ_TRUE;
+          }
+      }
+  }
+  pj_sockaddr_print(addr, addrinfo, sizeof(addrinfo), 3);
+
+  /* Ignore IPv6 link-local address */
+  if (stun_cfg->af == pj_AF_INET6()) {
+      const pj_in6_addr *a = &addr->ipv6.sin6_addr;
+      if (a->s6_addr[0] == 0xFE && (a->s6_addr[1] & 0xC0) == 0x80)
+          return PJ_TRUE;
+  }
+
+  cand = &comp->cand_list[comp->cand_cnt];
+
+  cand->type = PJ_ICE_CAND_TYPE_HOST;
+  cand->status = PJ_SUCCESS;
+  cand->local_pref = HOST_PREF;
+  cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
+  cand->comp_id = (pj_uint8_t) comp->comp_id;
+  cand->transport = transport;
+
+  char addstr[PJ_INET6_ADDRSTRLEN+10];
+  pj_sockaddr_print(addr, addstr,
+                            sizeof(addstr), 3);
+  printf("add_stun_and_host 2: %s", addstr);
+  pj_sockaddr_cp(&cand->addr, addr);
+  pj_sockaddr_cp(&cand->base_addr, addr);
+  pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
+
+  /* Check if not already in list */
+  for (j=0; j<comp->cand_cnt; j++) {
+      if (ice_cand_equals(cand, &comp->cand_list[j])) {
+          cand_duplicate = PJ_TRUE;
+          return PJ_FALSE;
+      }
+  }
+
+  if (cand_duplicate) {
+      PJ_LOG(4, (ice_st->obj_name,
+             "Comp %d: host candidate %s (tpid=%d) is a duplicate",
+             comp->comp_id, pj_sockaddr_print(&cand->addr, addrinfo,
+             sizeof(addrinfo), 3), cand->transport_id));
+
+      pj_bzero(&cand->addr, sizeof(cand->addr));
+      pj_bzero(&cand->base_addr, sizeof(cand->base_addr));
+      return PJ_TRUE;
+  } else {
+      comp->cand_cnt+=1;
+  }
+
+  pj_ice_calc_foundation(ice_st->pool, &cand->foundation,
+                         cand->type, &cand->base_addr);
+
+  /* Set default candidate with the preferred default
+   * address family
+   */
+  if (comp->ice_st->cfg.af != pj_AF_UNSPEC() &&
+      addr->addr.sa_family == comp->ice_st->cfg.af &&
+      comp->cand_list[comp->default_cand].base_addr.addr.sa_family !=
+      ice_st->cfg.af)
+  {
+      comp->default_cand = (unsigned)(cand - comp->cand_list);
+  }
+
+  if (transport == PJ_CAND_TCP_ACTIVE) {
+      // Use the port 9 (DISCARD Protocol) for TCP active candidates.
+      pj_sockaddr_set_port(&cand->addr, 9);
+  }
+
+  PJ_LOG(4,(ice_st->obj_name,
+            "Comp %d/%d: host candidate %s (tpid=%d) added",
+            comp->comp_id, comp->cand_cnt-1,
+            pj_sockaddr_print(&cand->addr, addrinfo,
+                              sizeof(addrinfo), 3),
+                              cand->transport_id));
 }
 
 
@@ -588,111 +697,31 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     if (stun_cfg->max_host_cands) {
         pj_stun_sock_info stun_sock_info;
         unsigned i;
+        pj_bool_t add_tcp_active_cand;
 
         /* Enumerate addresses */
         status = pj_stun_sock_get_info(comp->stun[idx].sock, &stun_sock_info);
         if (status != PJ_SUCCESS)
             return status;
 
+        add_tcp_active_cand = stun_sock_info.conn_type != PJ_STUN_TP_UDP;
         for (i=0; i<stun_sock_info.alias_cnt &&
                   i<stun_cfg->max_host_cands; ++i)
         {
-            unsigned j;
-            pj_bool_t cand_duplicate = PJ_FALSE;
-            char addrinfo[PJ_INET6_ADDRSTRLEN+10];
-            const pj_sockaddr *addr = &stun_sock_info.aliases[i];
-
-            /* Leave one candidate for relay */
-            if (comp->cand_cnt >= PJ_ICE_ST_MAX_CAND-1) {
-                PJ_LOG(4,(ice_st->obj_name, "Too many host candidates"));
-                break;
-            }
-
-            /* Ignore loopback addresses if cfg->stun.loop_addr is unset */
-            if (stun_cfg->loop_addr==PJ_FALSE) {
-                if (stun_cfg->af == pj_AF_INET() &&
-                    (pj_ntohl(addr->ipv4.sin_addr.s_addr)>>24)==127)
-                {
-                    continue;
-                }
-                else if (stun_cfg->af == pj_AF_INET6()) {
-                    pj_in6_addr in6addr = {{0}};
-                    in6addr.s6_addr[15] = 1;
-                    if (pj_memcmp(&in6addr, &addr->ipv6.sin6_addr,
-                                  sizeof(in6addr))==0)
-                    {
-                        continue;
-                    }
-                }
-            }
-            pj_sockaddr_print(addr, addrinfo, sizeof(addrinfo), 3);
-
-            /* Ignore IPv6 link-local address */
-            if (stun_cfg->af == pj_AF_INET6()) {
-                const pj_in6_addr *a = &addr->ipv6.sin6_addr;
-                if (a->s6_addr[0] == 0xFE && (a->s6_addr[1] & 0xC0) == 0x80)
-                    continue;
-            }
-
-            cand = &comp->cand_list[comp->cand_cnt];
-
-            cand->type = PJ_ICE_CAND_TYPE_HOST;
-            cand->status = PJ_SUCCESS;
-            cand->local_pref = HOST_PREF;
-            cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
-            cand->comp_id = (pj_uint8_t) comp->comp_id;
-            // TODO(sblin) really passive?
-            cand->transport = stun_sock_info.conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
-
-            char addstr[PJ_INET6_ADDRSTRLEN+10];
-            pj_sockaddr_print(addr, addstr,
-                                      sizeof(addstr), 3);
-            printf("add_stun_and_host 2: %s", addstr);
-            pj_sockaddr_cp(&cand->addr, addr);
-            pj_sockaddr_cp(&cand->base_addr, addr);
-            pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
-
-            /* Check if not already in list */
-            for (j=0; j<comp->cand_cnt; j++) {
-                if (ice_cand_equals(cand, &comp->cand_list[j])) {
-                    cand_duplicate = PJ_TRUE;
-                    break;
-                }
-            }
-
-            if (cand_duplicate) {
-                PJ_LOG(4, (ice_st->obj_name,
-                       "Comp %d: host candidate %s (tpid=%d) is a duplicate",
-                       comp->comp_id, pj_sockaddr_print(&cand->addr, addrinfo,
-                       sizeof(addrinfo), 3), cand->transport_id));
-
-                pj_bzero(&cand->addr, sizeof(cand->addr));
-                pj_bzero(&cand->base_addr, sizeof(cand->base_addr));
-                continue;
+            if (!add_tcp_active_cand) {
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_UDP);
             } else {
-                comp->cand_cnt+=1;
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_TCP_PASSIVE);
+                /** RFC 6544, Section 4.1:
+                 * First, agents SHOULD obtain host candidates as described in
+                 * Section 5.1.  Then, each agent SHOULD "obtain" (allocate a
+                 * placeholder for) an active host candidate for each component of each
+                 * TCP-capable media stream on each interface that the host has.  The
+                 * agent does not yet have to actually allocate a port for these
+                 * candidates, but they are used for the creation of the check lists.
+                 */
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp, PJ_CAND_TCP_ACTIVE);
             }
-
-            pj_ice_calc_foundation(ice_st->pool, &cand->foundation,
-                                   cand->type, &cand->base_addr);
-
-            /* Set default candidate with the preferred default
-             * address family
-             */
-            if (comp->ice_st->cfg.af != pj_AF_UNSPEC() &&
-                addr->addr.sa_family == comp->ice_st->cfg.af &&
-                comp->cand_list[comp->default_cand].base_addr.addr.sa_family !=
-                ice_st->cfg.af)
-            {
-                comp->default_cand = (unsigned)(cand - comp->cand_list);
-            }
-
-            PJ_LOG(4,(ice_st->obj_name,
-                      "Comp %d/%d: host candidate %s (tpid=%d) added",
-                      comp->comp_id, comp->cand_cnt-1,
-                      pj_sockaddr_print(&cand->addr, addrinfo,
-                                        sizeof(addrinfo), 3),
-                                        cand->transport_id));
         }
     }
 
@@ -1175,7 +1204,6 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
             char addstr[PJ_INET6_ADDRSTRLEN+10];
             pj_sockaddr_print(&cand->addr, addstr,
                                       sizeof(addstr), 3);
-            printf("pj_ice_strans_init_ice: %s", addstr);
             status = pj_ice_sess_add_cand(ice_st->ice, comp->comp_id,
                                           cand->transport_id, cand->type,
                                           cand->local_pref,
