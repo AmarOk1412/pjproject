@@ -721,19 +721,19 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
             add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
                                 PJ_CAND_UDP);
             } else {
-            add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
-                                PJ_CAND_TCP_PASSIVE);
-            /** RFC 6544, Section 4.1:
-                * First, agents SHOULD obtain host candidates as described in
-                * Section 5.1.  Then, each agent SHOULD "obtain" (allocate a
-                * placeholder for) an active host candidate for each component of
-                * each TCP-capable media stream on each interface that the host
-                * has.  The agent does not yet have to actually allocate a port for
-                * these candidates, but they are used for the creation of the check
-                * lists.
-                */
-            add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
-                                PJ_CAND_TCP_ACTIVE);
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
+                                    PJ_CAND_TCP_PASSIVE);
+                /** RFC 6544, Section 4.1:
+                    * First, agents SHOULD obtain host candidates as described in
+                    * Section 5.1.  Then, each agent SHOULD "obtain" (allocate a
+                    * placeholder for) an active host candidate for each component of
+                    * each TCP-capable media stream on each interface that the host
+                    * has.  The agent does not yet have to actually allocate a port for
+                    * these candidates, but they are used for the creation of the check
+                    * lists.
+                    */
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
+                                    PJ_CAND_TCP_ACTIVE);
             }
         }
     }

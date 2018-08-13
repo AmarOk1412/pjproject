@@ -655,6 +655,26 @@ static int encode_session(char buffer[], unsigned maxlen)
                                     sizeof(ipaddr), 0));
         }
 
+        if (cand[0].transport != PJ_CAND_UDP) {
+            /** RFC 6544, Section 4.5:
+             * If the default candidate is TCP-based, the agent MUST include the
+             * a=setup and a=connection attributes from RFC 4145 [RFC4145],
+             * following the procedures defined there as if ICE were not in use.
+             */
+            PRINT("a=setup:");
+            switch (cand[0].transport) {
+              case PJ_CAND_TCP_ACTIVE:
+                  PRINT("active\n");
+                  break;
+              case PJ_CAND_TCP_PASSIVE:
+                  PRINT("passive\n");
+                  break;
+              default:
+                  return PJ_EINVALIDOP;
+            }
+            PRINT("a=connection:new\n");
+        }
+
         /* Enumerate all candidates for this component */
         cand_cnt = PJ_ARRAY_SIZE(cand);
         status = pj_ice_strans_enum_cands(icedemo.icest, comp+1,
