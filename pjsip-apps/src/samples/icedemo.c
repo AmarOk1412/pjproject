@@ -440,9 +440,6 @@ static void icedemo_create_instance(void)
         icedemo_perror("error creating ice", status);
     else
         PJ_LOG(3,(THIS_FILE, "ICE instance successfully created"));
-
-
-    printf("####ENABLED TCP: %i\n", (icedemo.ice_cfg.protocol == PJ_ICE_TP_TCP));
 }
 
 /* Utility to nullify parsed remote info */
@@ -776,7 +773,7 @@ static void icedemo_show_ice(void)
  */
 static void icedemo_input_remote(void)
 {
-    char linebuf[80];
+    char linebuf[120];
     unsigned media_cnt = 0;
     unsigned comp0_port = 0;
     char     comp0_addr[80];
@@ -911,21 +908,22 @@ static void icedemo_input_remote(void)
                     pj_status_t status;
                     pj_bool_t is_tcp = PJ_FALSE;
 
-                    cnt = sscanf(sdpcand, "%s %d %s %d %s %d typ %s",
+                    cnt = sscanf(sdpcand, "%s %d %s %d %s %d typ %s tcptype %s\n",
                                  foundation,
                                  &comp_id,
                                  transport,
                                  &prio,
                                  ipaddr,
                                  &port,
-                                 type);
-                    if (cnt != 7) {
-                        PJ_LOG(1, (THIS_FILE, "error: Invalid ICE candidate line"));
+                                 type,
+                                 tcp_type);
+                    if (cnt != 7 && cnt != 8) {
+                        PJ_LOG(1, (THIS_FILE, "error: Invalid ICE candidate line", cnt));
                         goto on_error;
                     }
 
+
                     if (strcmp(transport, "TCP")==0) {
-                        cnt = sscanf(sdpcand, " tcptype %s", tcp_type);
                         is_tcp = PJ_TRUE;
                     }
 
@@ -984,6 +982,10 @@ static void icedemo_input_remote(void)
 
                     if (cand->comp_id > icedemo.rem.comp_cnt)
                         icedemo.rem.comp_cnt = cand->comp_id;
+                } else if (strcmp(attr, "setup")==0) {
+                    // TODO
+                } else if (strcmp(attr, "connection")==0) {
+                    // TODO
                 }
             }
             break;
