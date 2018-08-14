@@ -1733,9 +1733,6 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
                 continue;
             }
 
-            printf("Added\n");
-
-
             chk->lcand = lcand;
             chk->rcand = rcand;
             chk->state = PJ_ICE_SESS_CHECK_STATE_FROZEN;
