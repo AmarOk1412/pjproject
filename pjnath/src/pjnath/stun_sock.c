@@ -74,7 +74,7 @@ struct pj_stun_sock
 
 
 static pj_bool_t
-on_connect_complete(pj_activesock_t *asock, pj_status_t status);
+on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status);
 
 /* Destructor for group lock */
 static void stun_sock_destructor(void *obj);
@@ -390,7 +390,24 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
         pj_bzero(&activesock_cb, sizeof(activesock_cb));
         activesock_cb.on_data_recvfrom = &on_data_recvfrom;
         activesock_cb.on_data_sent = &on_data_sent;
-        activesock_cb.on_connect_complete = &on_connect_complete;
+
+#if PJ_HAS_TCP
+        if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
+          activesock_cb.on_accept_complete = &on_stun_sock_ready;
+            // Will be ready to accept incoming connections from the external world
+            status = pj_sock_listen(stun_sock->sock_fd, PJ_SOMAXCONN);
+            if (status != PJ_SUCCESS) {
+                pj_stun_sock_destroy(stun_sock);
+                pj_grp_lock_release(stun_sock->grp_lock);
+                return status;
+            }
+        } else {
+          activesock_cb.on_connect_complete = &on_stun_sock_ready;
+        }
+#else
+        activesock_cb.on_connect_complete = &on_stun_sock_ready;
+#endif
+
         status = pj_activesock_create(stun_sock->pool, stun_sock->sock_fd,
                                       sock_type,
                                       &activesock_cfg, stun_sock->cfg.ioqueue,
@@ -404,30 +421,27 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
         }
 
 #if PJ_HAS_TCP
-        char addrinfo[PJ_INET6_ADDRSTRLEN+10];
-        pj_sockaddr_print(&bound_addr, addrinfo,
-                          PJ_INET6_ADDRSTRLEN, 3);
-        PJ_LOG(5,(stun_sock->pool->obj_name, "Connecting to %s", addrinfo));
         if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
-            status = pj_activesock_start_connect(
+            status = pj_activesock_start_accept(
                                         stun_sock->active_sock,
-                                        stun_sock->pool,
-                                        &bound_addr,
-                                        pj_sockaddr_get_len(&bound_addr));
+                                        stun_sock->pool);
         } else {
             status = PJ_SUCCESS;
         }
         if (status == PJ_SUCCESS) {
-            on_connect_complete(stun_sock->active_sock, PJ_SUCCESS);
+            on_stun_sock_ready(stun_sock->active_sock, PJ_SUCCESS);
         } else if (status != PJ_EPENDING) {
+            char addrinfo[PJ_INET6_ADDRSTRLEN+10];
             pj_perror(3, stun_sock->pool->obj_name, status,
-                      "Failed to connect to %s", addrinfo);
+                      "Failed to connect to %s",
+                      pj_sockaddr_print(&bound_addr,
+                                        addrinfo, sizeof(addrinfo), 3));
             pj_stun_sock_destroy(stun_sock);
             pj_grp_lock_release(stun_sock->grp_lock);
             return;
         }
 #else
-        on_connect_complete(stun_sock->active_sock, PJ_SUCCESS);
+        on_stun_sock_ready(stun_sock->active_sock, PJ_SUCCESS);
 #endif
     }
 
@@ -439,7 +453,7 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
  * Notification when outgoing TCP socket has been connected.
  */
 static pj_bool_t
-on_connect_complete(pj_activesock_t *asock, pj_status_t status)
+on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status)
 {
     pj_stun_sock *stun_sock;
     stun_sock = (pj_stun_sock*) pj_activesock_get_user_data(asock);

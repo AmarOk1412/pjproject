@@ -1691,10 +1691,8 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
             char addstr[PJ_INET6_ADDRSTRLEN+10];
             pj_sockaddr_print(&lcand->addr, addstr,
                                       sizeof(addstr), 3);
-            printf("add_stun_and_host locale: %s\n", addstr);
             pj_sockaddr_print(&rcand->addr, addstr,
                                       sizeof(addstr), 3);
-            printf("add_stun_and_host remote: %s\n", addstr);
 
             pj_ice_sess_check *chk = NULL;
 
