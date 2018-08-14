@@ -517,7 +517,6 @@ add_local_candidate(pj_ice_sess_cand *cand, unsigned idx,
   char addstr[PJ_INET6_ADDRSTRLEN+10];
   pj_sockaddr_print(addr, addstr,
                             sizeof(addstr), 3);
-  printf("add_stun_and_host 2: %s", addstr);
   pj_sockaddr_cp(&cand->addr, addr);
   pj_sockaddr_cp(&cand->base_addr, addr);
   pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
@@ -671,7 +670,6 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
         char addstr[PJ_INET6_ADDRSTRLEN+10];
         pj_sockaddr_print(&stun_sock_info.aliases[0], addstr,
                                   sizeof(addstr), 3);
-        printf("add_stun_and_host 1: %s", addstr);
 
         pj_sockaddr_cp(&cand->base_addr, &stun_sock_info.aliases[0]);
         pj_sockaddr_cp(&cand->rel_addr, &cand->base_addr);
