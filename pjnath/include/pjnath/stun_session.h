@@ -174,6 +174,9 @@ typedef struct pj_stun_rx_data pj_stun_rx_data;
 /** Forward declaration for pj_stun_session */
 typedef struct pj_stun_session pj_stun_session;
 
+/** Forward declaration for pj_stun_sock */
+typedef struct pj_stun_sock pj_stun_sock;
+
 /**
  * STUN transport types, which will be used both to specify the connection
  * type for reaching STUN server and the type of allocation transport to be
@@ -330,6 +333,10 @@ typedef struct pj_stun_session_cb
 				    void *token,
 				    const pj_sockaddr_t *src_addr,
 				    unsigned src_addr_len);
+
+#if PJ_HAS_TCP
+    void (*on_tcp_connected)(pj_stun_sock *stun_sock, pj_status_t status);
+#endif
 
 } pj_stun_session_cb;
 

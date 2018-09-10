@@ -26,9 +26,12 @@
  */
 #include <pjnath/stun_config.h>
 #include <pjlib-util/resolver.h>
+#include <pjlib-util/srv_resolver.h>
 #include <pjnath/stun_session.h>
+#include <pj/activesock.h>
 #include <pj/ioqueue.h>
 #include <pj/lock.h>
+#include <pj/pool.h>
 #include <pj/sock.h>
 #include <pj/sock_qos.h>
 
@@ -44,6 +47,7 @@ PJ_BEGIN_DECL
  * with the additional STUN capability. It has the following features:
  *
  *  - API to send and receive UDP packets
+ * TODO(sblin): update this
  *
  *  - multiplex STUN and non-STUN incoming packets and distinguish between
  *    STUN responses that belong to internal requests with application data
@@ -56,11 +60,6 @@ PJ_BEGIN_DECL
  *    (when the NAT binding changes)
  *
  */
-
-/**
- * Opaque type to represent a STUN transport.
- */
-typedef struct pj_stun_sock pj_stun_sock;
 
 /**
  * Types of operation being reported in \a on_status() callback of
@@ -504,12 +503,46 @@ PJ_DECL(pj_status_t) pj_stun_sock_sendto(pj_stun_sock *stun_sock,
 					 const pj_sockaddr_t *dst_addr,
 					 unsigned addr_len);
 
+PJ_DECL(pj_status_t) pj_stun_sock_connect_active(pj_stun_sock *stun_sock,
+                     pj_sockaddr* remote_addr);
+
 /**
  * @}
  */
 
-
 PJ_END_DECL
 
+struct pj_stun_sock
+{
+    char                   *obj_name;       /* Log identification         */
+    pj_pool_t              *pool;           /* Pool                       */
+    void                   *user_data;      /* Application user data      */
+    pj_bool_t              is_destroying;   /* Destroy already called     */
+    int                    af;              /* Address family             */
+    pj_stun_tp_type        conn_type;
+    pj_stun_sock_cfg       setting;
+    pj_stun_config         cfg;             /* STUN config (ioqueue etc)  */
+    pj_stun_sock_cb        cb;              /* Application callbacks      */
+
+    int                    ka_interval;     /* Keep alive interval        */
+    pj_timer_entry         ka_timer;        /* Keep alive timer.          */
+
+    pj_sockaddr            srv_addr;        /* Resolved server addr       */
+    pj_sockaddr            mapped_addr;     /* Our public address         */
+
+    pj_dns_srv_async_query *q;              /* Pending DNS query          */
+    pj_sock_t              main_sock_fd;    /* Socket descriptor          */
+    pj_activesock_t        *main_sock;      /* Active socket object       */
+#if PJ_HAS_TCP
+    pj_sock_t              outgoing_sock_fd;/* Socket descriptor          */
+    pj_activesock_t        *outgoing_sock;  /* Active socket object       */
+#endif
+    pj_ioqueue_op_key_t    send_key;        /* Default send key for app   */
+    pj_ioqueue_op_key_t    int_send_key;    /* Send key for internal      */
+
+    pj_uint16_t            tsx_id[6];       /* .. to match STUN msg       */
+    pj_stun_session        *stun_sess;      /* STUN session               */
+    pj_grp_lock_t          *grp_lock;       /* Session group lock         */
+};
 
 #endif	/* __PJNATH_STUN_SOCK_H__ */
