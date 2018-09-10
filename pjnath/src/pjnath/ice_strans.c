@@ -102,6 +102,10 @@ static void           ice_rx_data(pj_ice_sess *ice,
                                void *pkt, pj_size_t size,
                                const pj_sockaddr_t *src_addr,
                                unsigned src_addr_len);
+static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
+                                           const pj_ice_sess_cand *lcand,
+                                           const pj_ice_sess_cand *rcand,
+                                           pj_ice_msg_data *msg_data);
 
 
 /* STUN socket callbacks */
@@ -1134,6 +1138,9 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
     ice_cb.on_ice_complete = &on_ice_complete;
     ice_cb.on_rx_data = &ice_rx_data;
     ice_cb.on_tx_pkt = &ice_tx_pkt;
+#if PJ_HAS_TCP
+    ice_cb.on_wait_tcp_connection = &ice_wait_tcp_connection;
+#endif
 
     /* Create! */
     status = pj_ice_sess_create(&ice_st->cfg.stun_cfg, ice_st->obj_name, role,
@@ -1797,6 +1804,45 @@ static void ice_rx_data(pj_ice_sess *ice,
         (*ice_st->cb.on_rx_data)(ice_st, comp_id, pkt, size,
                                  src_addr, src_addr_len);
     }
+}
+
+static void on_tcp_connected(pj_stun_sock *stun_sock, pj_status_t status)
+{
+
+    sock_user_data *data;
+    pj_ice_strans_comp *comp;
+    pj_ice_strans *ice_st;
+    data = (sock_user_data*) pj_stun_sock_get_user_data(stun_sock);
+    if (data == NULL) {
+        /* We have disassociated ourselves from the STUN socket */
+        return;
+    }
+
+    comp = data->comp;
+    ice_st = comp->ice_st;
+
+    ice_sess_on_tcp_connected(ice_st->ice, status);
+}
+
+static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
+                                           const pj_ice_sess_cand *lcand,
+                                           const pj_ice_sess_cand *rcand,
+                                           pj_ice_msg_data *msg_data)
+{
+    // TODO: Get first message to send
+    pj_status_t status = PJ_EINVAL;
+    pj_ice_strans *ice_st = (pj_ice_strans*)ice->user_data;
+    for (unsigned i = 0; i < ice_st->comp_cnt; ++i) {
+        pj_ice_strans_comp* comp = ice_st->comp[i];
+        if (comp->stun[0].sock != NULL) {
+            status = pj_stun_sock_connect_active(comp->stun[0].sock, &rcand->addr);
+            comp->stun[0].sock->stun_sess->cb.on_tcp_connected = &on_tcp_connected;
+        } else {
+            // TODO print error
+        }
+    }
+
+    return status;
 }
 
 /* Notification when incoming packet has been received from

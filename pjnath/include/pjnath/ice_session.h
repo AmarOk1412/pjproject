@@ -405,7 +405,6 @@ typedef enum pj_ice_sess_check_state
      * response.
      */
     PJ_ICE_SESS_CHECK_STATE_FAILED
-
 } pj_ice_sess_check_state;
 
 
@@ -566,6 +565,11 @@ typedef struct pj_ice_sess_cb
 			      void *pkt, pj_size_t size,
 			      const pj_sockaddr_t *src_addr,
 			      unsigned src_addr_len);
+
+    pj_status_t (*on_wait_tcp_connection)(pj_ice_sess *ice,
+                                          const pj_ice_sess_cand *src_addr,
+                                          const pj_ice_sess_cand *dest_addr,
+                                          pj_ice_msg_data *msg_data);
 } pj_ice_sess_cb;
 
 
@@ -723,6 +727,8 @@ struct pj_ice_sess
     	char txt[128];
 	char errmsg[PJ_ERR_MSG_SIZE];
     } tmp;
+
+    unsigned last_check_id;
 };
 
 
@@ -1028,6 +1034,8 @@ PJ_DECL(pj_status_t) pj_ice_sess_on_rx_pkt(pj_ice_sess *ice,
 /**
  * @}
  */
+
+ PJ_DECL(void) ice_sess_on_tcp_connected(pj_ice_sess *ice, pj_status_t status);
 
 
 PJ_END_DECL
