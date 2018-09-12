@@ -202,7 +202,10 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
     stun_sock->af = af;
     stun_sock->conn_type = conn_type;
     stun_sock->main_sock_fd = PJ_INVALID_SOCKET;
+#if PJ_HAS_TCP
     stun_sock->outgoing_sock_fd = PJ_INVALID_SOCKET;
+    stun_sock->is_outgoing = PJ_FALSE;
+#endif
 
     /* Copy STUN config (this contains ioqueue, timer heap, etc.) */
     pj_memcpy(&stun_sock->cfg, cfg, sizeof(*cfg));
@@ -841,8 +844,14 @@ PJ_DEF(pj_status_t) pj_stun_sock_sendto( pj_stun_sock *stun_sock,
         status = pj_activesock_sendto(stun_sock->main_sock, send_key,
                                       pkt, &size, flag, dst_addr, addr_len);
     } else {
-        status = pj_activesock_send(stun_sock->main_sock, send_key,
-                                      pkt, &size, flag);
+#if PJ_HAS_TCP
+        if (stun_sock->is_outgoing)
+            status = pj_activesock_send(stun_sock->outgoing_sock, send_key,
+                     pkt, &size, flag);
+        else
+            status = pj_activesock_send(stun_sock->main_sock, send_key,
+                     pkt, &size, flag);
+#endif
     }
 
     pj_grp_lock_release(stun_sock->grp_lock);
@@ -859,6 +868,7 @@ PJ_DECL(pj_status_t) pj_stun_sock_connect_active(pj_stun_sock *stun_sock,
     pj_grp_lock_acquire(stun_sock->grp_lock);
     int sock_type = pj_SOCK_STREAM();
 
+    stun_sock->is_outgoing = PJ_TRUE;
     /* Create socket and bind socket */
     status = pj_sock_socket(stun_sock->af, sock_type, 0, &stun_sock->outgoing_sock_fd);
     if (status != PJ_SUCCESS) {

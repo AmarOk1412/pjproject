@@ -534,6 +534,7 @@ struct pj_stun_sock
     pj_sock_t              main_sock_fd;    /* Socket descriptor          */
     pj_activesock_t        *main_sock;      /* Active socket object       */
 #if PJ_HAS_TCP
+    pj_bool_t              is_outgoing;     /* If we are using outgoing_sock */
     pj_sock_t              outgoing_sock_fd;/* Socket descriptor          */
     pj_activesock_t        *outgoing_sock;  /* Active socket object       */
 #endif
