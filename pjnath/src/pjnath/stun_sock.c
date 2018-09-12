@@ -47,7 +47,7 @@ enum { MAX_BIND_RETRY = 100 };
 static pj_bool_t
 on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status);
 
-static pj_bool_t
+pj_bool_t
 on_outgoing_connected(pj_activesock_t *asock, pj_status_t status);
 
 /* Destructor for group lock */
@@ -58,7 +58,7 @@ static pj_bool_t sess_fail(pj_stun_sock *stun_sock,
                            pj_status_t status);
 
 /* This callback is called by the STUN session to send packet */
-static pj_status_t sess_on_send_msg(pj_stun_session *sess,
+pj_status_t sess_on_send_msg(pj_stun_session *sess,
                                     void *token,
                                     const void *pkt,
                                     pj_size_t pkt_size,
@@ -68,7 +68,7 @@ static pj_status_t sess_on_send_msg(pj_stun_session *sess,
 /* This callback is called by the STUN session when outgoing transaction
  * is complete
  */
-static void sess_on_request_complete(pj_stun_session *sess,
+void sess_on_request_complete(pj_stun_session *sess,
                                      pj_status_t status,
                                      void *token,
                                      pj_stun_tx_data *tdata,
@@ -84,7 +84,7 @@ static void dns_srv_resolver_cb(void *user_data,
 static pj_status_t get_mapped_addr(pj_stun_sock *stun_sock);
 
 /* Callback from active socket when incoming packet is received */
-static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
+pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   void *data,
                                   pj_size_t size,
                                   const pj_sockaddr_t *src_addr,
@@ -92,15 +92,15 @@ static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   pj_status_t status);
 
 /* Callback from active socket about send status */
-static pj_bool_t on_data_sent(pj_activesock_t *asock,
+pj_bool_t on_data_sent(pj_activesock_t *asock,
                               pj_ioqueue_op_key_t *send_key,
                               pj_ssize_t sent);
 
 /* Schedule keep-alive timer */
-static void start_ka_timer(pj_stun_sock *stun_sock);
+void start_ka_timer(pj_stun_sock *stun_sock);
 
 /* Keep-alive timer callback */
-static void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te);
+void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te);
 
 #define INTERNAL_MSG_TOKEN  (void*)(pj_ssize_t)1
 
@@ -202,7 +202,10 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
     stun_sock->af = af;
     stun_sock->conn_type = conn_type;
     stun_sock->main_sock_fd = PJ_INVALID_SOCKET;
+#if PJ_HAS_TCP
     stun_sock->outgoing_sock_fd = PJ_INVALID_SOCKET;
+    stun_sock->is_outgoing = PJ_FALSE;
+#endif
 
     /* Copy STUN config (this contains ioqueue, timer heap, etc.) */
     pj_memcpy(&stun_sock->cfg, cfg, sizeof(*cfg));
@@ -814,14 +817,15 @@ PJ_DEF(pj_status_t) pj_stun_sock_get_info( pj_stun_sock *stun_sock,
             pj_sockaddr_set_port(&info->aliases[i], port);
         }
 
-    /* Put the default IP in the first slot */
-    for (i=0; i<info->alias_cnt; ++i) {
-        if (pj_sockaddr_cmp(&info->aliases[i], &def_addr)==0) {
-            if (i!=0) {
-                pj_sockaddr_cp(&info->aliases[i], &info->aliases[0]);
-                pj_sockaddr_cp(&info->aliases[0], &def_addr);
+        /* Put the default IP in the first slot */
+        for (i=0; i<info->alias_cnt; ++i) {
+            if (pj_sockaddr_cmp(&info->aliases[i], &def_addr)==0) {
+                if (i!=0) {
+                    pj_sockaddr_cp(&info->aliases[i], &info->aliases[0]);
+                    pj_sockaddr_cp(&info->aliases[0], &def_addr);
+                }
+                break;
             }
-            break;
         }
     }
 
@@ -861,8 +865,14 @@ PJ_DEF(pj_status_t) pj_stun_sock_sendto( pj_stun_sock *stun_sock,
         status = pj_activesock_sendto(stun_sock->main_sock, send_key,
                                       pkt, &size, flag, dst_addr, addr_len);
     } else {
-        status = pj_activesock_send(stun_sock->main_sock, send_key,
-                                      pkt, &size, flag);
+#if PJ_HAS_TCP
+        if (stun_sock->is_outgoing)
+            status = pj_activesock_send(stun_sock->outgoing_sock, send_key,
+                     pkt, &size, flag);
+        else
+            status = pj_activesock_send(stun_sock->main_sock, send_key,
+                     pkt, &size, flag);
+#endif
     }
 
     pj_grp_lock_release(stun_sock->grp_lock);
@@ -879,6 +889,7 @@ PJ_DECL(pj_status_t) pj_stun_sock_connect_active(pj_stun_sock *stun_sock,
     pj_grp_lock_acquire(stun_sock->grp_lock);
     int sock_type = pj_SOCK_STREAM();
 
+    stun_sock->is_outgoing = PJ_TRUE;
     /* Create socket and bind socket */
     status = pj_sock_socket(stun_sock->af, sock_type, 0, &stun_sock->outgoing_sock_fd);
     if (status != PJ_SUCCESS) {
@@ -989,7 +1000,7 @@ PJ_DECL(pj_status_t) pj_stun_sock_connect_active(pj_stun_sock *stun_sock,
     return status;
 }
 
-static pj_bool_t
+pj_bool_t
 on_outgoing_connected(pj_activesock_t *asock, pj_status_t status)
 {
     pj_stun_sock *stun_sock;
@@ -1006,7 +1017,7 @@ on_outgoing_connected(pj_activesock_t *asock, pj_status_t status)
 #endif
 
 /* This callback is called by the STUN session to send packet */
-static pj_status_t sess_on_send_msg(pj_stun_session *sess,
+pj_status_t sess_on_send_msg(pj_stun_session *sess,
                                     void *token,
                                     const void *pkt,
                                     pj_size_t pkt_size,
@@ -1043,7 +1054,7 @@ static pj_status_t sess_on_send_msg(pj_stun_session *sess,
 /* This callback is called by the STUN session when outgoing transaction
  * is complete
  */
-static void sess_on_request_complete(pj_stun_session *sess,
+void sess_on_request_complete(pj_stun_session *sess,
                                      pj_status_t status,
                                      void *token,
                                      pj_stun_tx_data *tdata,
@@ -1127,7 +1138,7 @@ on_return:
 }
 
 /* Schedule keep-alive timer */
-static void start_ka_timer(pj_stun_sock *stun_sock)
+void start_ka_timer(pj_stun_sock *stun_sock)
 {
     pj_timer_heap_cancel_if_active(stun_sock->cfg.timer_heap,
                                    &stun_sock->ka_timer, 0);
@@ -1147,7 +1158,7 @@ static void start_ka_timer(pj_stun_sock *stun_sock)
 }
 
 /* Keep-alive timer callback */
-static void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te)
+void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te)
 {
     pj_stun_sock *stun_sock;
 
@@ -1169,7 +1180,7 @@ static void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te)
 }
 
 /* Callback from active socket when incoming packet is received */
-static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
+pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   void *data,
                                   pj_size_t size,
                                   const pj_sockaddr_t *src_addr,
@@ -1245,7 +1256,7 @@ process_app_data:
 }
 
 /* Callback from active socket about send status */
-static pj_bool_t on_data_sent(pj_activesock_t *asock,
+pj_bool_t on_data_sent(pj_activesock_t *asock,
                               pj_ioqueue_op_key_t *send_key,
                               pj_ssize_t sent)
 {

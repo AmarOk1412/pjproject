@@ -1838,7 +1838,7 @@ static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
                                            const pj_ice_sess_cand *rcand,
                                            pj_ice_msg_data *msg_data)
 {
-    // TODO: Get first message to send
+    // TODO(sblin): Save first message to send and send it when ready
     pj_status_t status = PJ_EINVAL;
     pj_ice_strans *ice_st = (pj_ice_strans*)ice->user_data;
     for (unsigned i = 0; i < ice_st->comp_cnt; ++i) {

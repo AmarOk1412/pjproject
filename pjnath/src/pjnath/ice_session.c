@@ -1911,6 +1911,7 @@ static pj_status_t perform_check(pj_ice_sess *ice,
     if (lcand->transport == PJ_CAND_UDP) {
         status = send_connectivity_check(ice, clist, check_id, nominate, msg_data);
     } else if (lcand->transport == PJ_CAND_TCP_ACTIVE) {
+        // TODO(sblin) msg_data is useless
         status = (*ice->cb.on_wait_tcp_connection)(ice, lcand, rcand, msg_data);
     }
 #else
@@ -2247,14 +2248,54 @@ static pj_status_t on_stun_send_msg(pj_stun_session *sess,
 
 void ice_sess_on_tcp_connected(pj_ice_sess *ice, pj_status_t status)
 {
-    pj_ice_sess_check *check;
-    check = &ice->clist.checks[ice->last_check_id];
+/** /
+    pj_ice_sess_check *check = &ice->clist.checks[ice->last_check_id];
 
     if (status != PJ_SUCCESS)
         check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED, status);
     else
         check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_SUCCEEDED, PJ_SUCCESS);
     on_check_complete(ice, check);
+/**/
+
+    // The TCP link is now ready. We can now send the first STUN message (send connectivity check)
+    // This should trigger on_stun_request_complete when finished
+
+    // First, check if the TCP is really connected. If not, abort
+    pj_ice_sess_check *check = &ice->clist.checks[ice->last_check_id];
+    if (status != PJ_SUCCESS) {
+        check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED, status);
+        on_check_complete(ice, check);
+        return;
+    }
+
+    // TCP is correctly connected. Craft the message to send
+    // TODO(sblin): deduplicate code from perform_check
+    // TODO(sblin): possible to get msg_data directly like on_stun_request_complete???
+    const pj_ice_sess_cand *lcand = check->lcand;
+    const pj_ice_sess_cand *rcand = check->rcand;
+    pj_ice_msg_data *msg_data = PJ_POOL_ZALLOC_T(check->tdata->pool, pj_ice_msg_data);
+    msg_data->transport_id = lcand->transport_id;
+    msg_data->has_req_data = PJ_TRUE;
+    msg_data->data.req.ice = ice;
+    msg_data->data.req.clist = &ice->clist;
+    msg_data->data.req.ckid = ice->last_check_id;
+
+    pj_ice_sess_comp *comp = find_comp(ice, lcand->comp_id);
+    pj_status_t status_send_msg;
+    // Note that USERNAME and MESSAGE-INTEGRITY will be added by the
+     // STUN session.
+
+    // Initiate STUN transaction to send the request
+    status_send_msg = pj_stun_session_send_msg(comp->stun_sess, msg_data, PJ_FALSE,
+                                      PJ_FALSE, &rcand->addr,
+                                      pj_sockaddr_get_len(&rcand->addr),
+                                      check->tdata);
+    if (status_send_msg != PJ_SUCCESS) {
+        check->tdata = NULL;
+        pjnath_perror(ice->obj_name, "Error sending STUN request", status);
+        pj_log_pop_indent();
+    }
 }
 
 
