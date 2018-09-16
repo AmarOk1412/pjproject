@@ -91,6 +91,12 @@ static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   int addr_len,
                                   pj_status_t status);
 
+static pj_bool_t on_data_read(pj_activesock_t *asock,
+                  			      void *data,
+                  			      pj_size_t size,
+                  			      pj_status_t status,
+                  			      pj_size_t *remainder);
+
 /* Callback from active socket about send status */
 static pj_bool_t on_data_sent(pj_activesock_t *asock,
                               pj_ioqueue_op_key_t *send_key,
@@ -366,21 +372,23 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
 
         /* Create the active socket */
         pj_bzero(&activesock_cb, sizeof(activesock_cb));
-        activesock_cb.on_data_recvfrom = &on_data_recvfrom;
         activesock_cb.on_data_sent = &on_data_sent;
+        activesock_cb.on_data_read = &on_data_read;
+        activesock_cb.on_data_recvfrom = &on_data_recvfrom;
 
 #if PJ_HAS_TCP
         if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
-            activesock_cb.on_accept_complete = &on_stun_sock_ready;
+            activesock_cb.on_accept_complete = &on_stun_sock_ready; //// TODO (WHY)
             // Will be ready to accept incoming connections from the external world
             status = pj_sock_listen(stun_sock->main_sock_fd, PJ_SOMAXCONN);
+            printf("'''''''''''''''''''''''''''' %i\n", stun_sock);
             if (status != PJ_SUCCESS) {
                 pj_stun_sock_destroy(stun_sock);
                 pj_grp_lock_release(stun_sock->grp_lock);
                 return status;
             }
         } else {
-          activesock_cb.on_connect_complete = &on_stun_sock_ready;
+            activesock_cb.on_connect_complete = &on_stun_sock_ready;
         }
 #else
         activesock_cb.on_connect_complete = &on_stun_sock_ready;
@@ -444,12 +452,16 @@ on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status)
      * See ticket #1557 (http://trac.pjsip.org/repos/ticket/1557).
      */
     if (!stun_sock->stun_sess) {
+        printf("FAILURE 5\n");
         sess_fail(stun_sock, PJ_STUN_SESS_DESTROYED, status);
         pj_grp_lock_release(stun_sock->grp_lock);
         return PJ_FALSE;
     }
 
+    printf("STATUS: %i\n", status);
+
     if (status != PJ_SUCCESS) {
+        printf("FAILURE 6 %i\n", stun_sock);
         sess_fail(stun_sock, PJ_STUN_TCP_CONNECT_ERROR, status);
         pj_grp_lock_release(stun_sock->grp_lock);
         return PJ_FALSE;
@@ -681,6 +693,7 @@ static void dns_srv_resolver_cb(void *user_data,
 
     /* Handle error */
     if (status != PJ_SUCCESS) {
+      printf("FAILURE 1\n");
         sess_fail(stun_sock, PJ_STUN_SOCK_DNS_OP, status);
         pj_grp_lock_release(stun_sock->grp_lock);
         return;
@@ -735,6 +748,7 @@ static pj_status_t get_mapped_addr(pj_stun_sock *stun_sock)
     return PJ_SUCCESS;
 
 on_error:
+    printf("FAILURE 2\n");
     sess_fail(stun_sock, PJ_STUN_SOCK_BINDING_OP, status);
     return status;
 }
@@ -1064,6 +1078,7 @@ static void sess_on_request_complete(pj_stun_session *sess,
 
     /* Handle failure */
     if (status != PJ_SUCCESS) {
+        printf("FAILURE 3\n");
         resched = sess_fail(stun_sock, op, status);
         goto on_return;
     }
@@ -1081,6 +1096,7 @@ static void sess_on_request_complete(pj_stun_session *sess,
     }
 
     if (mapped_attr == NULL) {
+        printf("FAILURE 4\n");
         resched = sess_fail(stun_sock, op, PJNATH_ESTUNNOMAPPEDADDR);
         goto on_return;
     }
@@ -1158,6 +1174,16 @@ static void ka_timer_cb(pj_timer_heap_t *th, pj_timer_entry *te)
     pj_grp_lock_release(stun_sock->grp_lock);
 }
 
+static pj_bool_t on_data_read(pj_activesock_t *asock,
+			      void *data,
+			      pj_size_t size,
+			      pj_status_t status,
+			      pj_size_t *remainder)
+{
+    printf("[DEBUG]stun_sock::on_data_read\n");
+    printf("[DEBUG]STATUS = SUCCESS ? %i\n", (status == PJ_SUCCESS));
+}
+
 /* Callback from active socket when incoming packet is received */
 static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   void *data,
@@ -1166,6 +1192,7 @@ static pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
                                   int addr_len,
                                   pj_status_t status)
 {
+    printf("[DEBUG]stun_sock::on_data_recvfrom\n");
     pj_stun_sock *stun_sock;
     pj_stun_msg_hdr *hdr;
     pj_uint16_t type;

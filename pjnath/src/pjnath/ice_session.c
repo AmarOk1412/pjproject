@@ -3165,6 +3165,7 @@ PJ_DEF(pj_status_t) pj_ice_sess_on_rx_pkt(pj_ice_sess *ice,
                                           const pj_sockaddr_t *src_addr,
                                           int src_addr_len)
 {
+    printf("ICI????????????/\n");
     pj_status_t status = PJ_SUCCESS;
     pj_ice_sess_comp *comp;
     pj_ice_msg_data *msg_data = NULL;
@@ -3206,6 +3207,7 @@ PJ_DEF(pj_status_t) pj_ice_sess_on_rx_pkt(pj_ice_sess *ice,
                                    PJ_STUN_IS_DATAGRAM |
                                      PJ_STUN_NO_FINGERPRINT_CHECK);
     if (status == PJ_SUCCESS) {
+        printf("[DEBUG]ice_session::pj_ice_sess_on_rx_pkt\n");
         status = pj_stun_session_on_rx_pkt(comp->stun_sess, pkt, pkt_size,
                                            PJ_STUN_IS_DATAGRAM, msg_data,
                                            NULL, src_addr, src_addr_len);

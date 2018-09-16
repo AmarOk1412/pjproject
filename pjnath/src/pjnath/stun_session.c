@@ -1406,6 +1406,7 @@ PJ_DEF(pj_status_t) pj_stun_session_on_rx_pkt(pj_stun_session *sess,
                                               const pj_sockaddr_t *src_addr,
                                               unsigned src_addr_len)
 {
+    printf("WEEEEEEEEEEEEEEEEEEEEEEEEEE\n");
     pj_stun_msg *msg, *response;
     pj_status_t status;
 

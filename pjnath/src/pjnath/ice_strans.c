@@ -1854,6 +1854,7 @@ static pj_bool_t stun_on_rx_data(pj_stun_sock *stun_sock,
                                  const pj_sockaddr_t *src_addr,
                                  unsigned addr_len)
 {
+    printf("[DEBUG]ice_strans::stun_on_rx_data\n");
     sock_user_data *data;
     pj_ice_strans_comp *comp;
     pj_ice_strans *ice_st;
