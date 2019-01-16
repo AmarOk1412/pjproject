@@ -1613,6 +1613,7 @@ PJ_DEF(pj_status_t) pj_ice_strans_sendto( pj_ice_strans *ice_st,
                     dest_addr_len = dst_addr_len;
                 }
 
+            printf("###########1\n");
             status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, data,
                                          (unsigned)data_len, 0, dest_addr,
                                          dest_addr_len);
@@ -1784,9 +1785,10 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
                 dest_addr_len = dst_addr_len;
             }
 
-        status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL,
-                                     pkt, (unsigned)size, 0,
-                                     dest_addr, dest_addr_len);
+            printf("###########pj_stun_sock_sendto %i\n", size);
+            status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, pkt,
+                                         (unsigned)size, 0, dest_addr,
+                                         dest_addr_len);
     } else {
         pj_assert(!"Invalid transport ID");
         status = PJ_EINVALIDOP;

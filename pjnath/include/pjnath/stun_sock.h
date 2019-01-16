@@ -538,9 +538,13 @@ struct pj_stun_sock
 #if PJ_HAS_TCP
     pj_bool_t              is_outgoing;     /* If we are using outgoing_sock */
     pj_sock_t              outgoing_sock_fd;/* Socket descriptor          */
-    pj_activesock_t        *outgoing_sock;  /* Active socket object       */
+    pj_activesock_t *outgoing_sock;         /* Active socket object       */
+    pj_activesock_t *incoming_sock;         /* Active socket object       */
+    pj_sock_t incoming_sock_fd;             /* Socket descriptor          */
+    pj_sockaddr_t *incoming_addr;
+    int incoming_addr_len;
 #endif
-    pj_ioqueue_op_key_t    send_key;        /* Default send key for app   */
+        pj_ioqueue_op_key_t send_key;       /* Default send key for app   */
     pj_ioqueue_op_key_t    int_send_key;    /* Send key for internal      */
 
     pj_uint16_t            tsx_id[6];       /* .. to match STUN msg       */
