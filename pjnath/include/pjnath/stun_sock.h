@@ -542,6 +542,7 @@ struct pj_stun_sock
     pj_activesock_t *incoming_sock;         /* Active socket object       */
     pj_sock_t incoming_sock_fd;             /* Socket descriptor          */
     pj_sockaddr_t *incoming_addr;
+    pj_sockaddr_t *outgoing_addr;
     int incoming_addr_len;
 #endif
         pj_ioqueue_op_key_t send_key;       /* Default send key for app   */
