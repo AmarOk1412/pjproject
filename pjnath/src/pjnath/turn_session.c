@@ -937,7 +937,6 @@ static void send_refresh(pj_turn_session *sess, int lifetime)
     if (lifetime == 0) {
         set_state(sess, PJ_TURN_STATE_DEALLOCATING);
     }
-
     status = pj_stun_session_send_msg(sess->stun, NULL, PJ_FALSE,
                                       (sess->conn_type==PJ_TURN_TP_UDP),
                                       sess->srv_addr,
@@ -1971,15 +1970,12 @@ static unsigned refresh_permissions(pj_turn_session *sess,
     }
 
     if (tdata) {
-        status = pj_stun_session_send_msg(sess->stun, req_token, PJ_FALSE,
-                                          (sess->conn_type==PJ_TURN_TP_UDP),
-                                          sess->srv_addr,
-                                          pj_sockaddr_get_len(sess->srv_addr),
-                                          tdata);
-        if (status != PJ_SUCCESS) {
-            PJ_LOG(1,(sess->obj_name,
-                      "Error sending CreatePermission request: %d",
-                      status));
+      status = pj_stun_session_send_msg(
+          sess->stun, req_token, PJ_FALSE, (sess->conn_type == PJ_TURN_TP_UDP),
+          sess->srv_addr, pj_sockaddr_get_len(sess->srv_addr), tdata);
+      if (status != PJ_SUCCESS) {
+            PJ_LOG(1, (sess->obj_name, "Error sending CreatePermission request: %d",
+                    status));
             count = 0;
         }
 

@@ -874,10 +874,10 @@ static pj_status_t send_test(nat_detect_session *sess,
 	      pj_sockaddr_get_port(sess->cur_server)));
 
     /* Send the request */
-    status = pj_stun_session_send_msg(sess->stun_sess, NULL, PJ_TRUE,
-				      PJ_TRUE, sess->cur_server,
-				      pj_sockaddr_get_len(sess->cur_server),
-				      sess->result[test_id].tdata);
+    status = pj_stun_session_send_msg(
+        sess->stun_sess, NULL, PJ_TRUE,
+        (sess->stun_sess->conn_type == PJ_STUN_TP_UDP), sess->cur_server,
+        pj_sockaddr_get_len(sess->cur_server), sess->result[test_id].tdata);
     if (status != PJ_SUCCESS)
 	goto on_error;
 

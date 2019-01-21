@@ -402,7 +402,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
 
 #if PJ_HAS_TCP
         if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
-          printf("!!pj_activesock_start_accept\n");
           status = pj_activesock_start_accept(stun_sock->main_sock, stun_sock->pool);
         } else {
             status = PJ_SUCCESS;
@@ -434,7 +433,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_alloc(pj_stun_sock *stun_sock)
 static pj_bool_t
 on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status)
 {
-  printf("!!on_stun_sock_ready\n");
   pj_stun_sock *stun_sock;
   stun_sock = (pj_stun_sock *)pj_activesock_get_user_data(asock);
   if (!stun_sock)
@@ -505,7 +503,6 @@ on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status)
 
 pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
                        pj_status_t status, pj_size_t *remainder) {
-  //printf("on_data_read\n");
 
     pj_stun_sock *stun_sock;
     pj_stun_msg_hdr *hdr;
@@ -524,11 +521,9 @@ pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
     pj_sockaddr_t *rx_sock;
     unsigned sock_addr_len;
     if (stun_sock->outgoing_addr) {
-      printf("READ OUT %i\n", (PJ_INET6_ADDRSTRLEN + 10));
       rx_sock = stun_sock->outgoing_addr;
       sock_addr_len = PJ_INET6_ADDRSTRLEN + 10;
     } else {
-      printf("READ IN%i\n", (stun_sock->incoming_addr_len));
       rx_sock = stun_sock->incoming_addr;
       sock_addr_len = stun_sock->incoming_addr_len;
     }
@@ -571,18 +566,10 @@ pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
                                        sock_addr_len);
 
     status = pj_grp_lock_release(stun_sock->grp_lock);
-    printf("STUN\n");
 
     return status != PJ_EGONE ? PJ_TRUE : PJ_FALSE;
 
   process_app_data:
-    printf("APP data %s - %i\n", (char*)data, size);
-
-    char addrinfo[PJ_INET6_ADDRSTRLEN + 10];
-    PJ_LOG(4, (stun_sock->obj_name, "XXXX: %s\n",
-               pj_sockaddr_print(rx_sock, addrinfo,
-                                 sizeof(addrinfo), 3)));
-
     if (stun_sock->cb.on_rx_data) {
       (*stun_sock->cb.on_rx_data)(stun_sock, data, (unsigned)size,
                                   rx_sock, sock_addr_len);
@@ -601,7 +588,6 @@ pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
 static pj_bool_t on_stun_sock_accept(pj_activesock_t *asock, pj_sock_t sock,
                                      const pj_sockaddr_t *src_addr,
                                      int src_addr_len) {
-    printf("!!on_stun_sock_accept\n");
     pj_status_t status;
     pj_stun_sock *stun_sock;
     int sock_type = pj_SOCK_STREAM();
@@ -879,10 +865,10 @@ static pj_status_t get_mapped_addr(pj_stun_sock *stun_sock)
         goto on_error;
 
     /* Send request */
-    status=pj_stun_session_send_msg(stun_sock->stun_sess, INTERNAL_MSG_TOKEN,
-                                    PJ_FALSE, PJ_TRUE, &stun_sock->srv_addr,
-                                    pj_sockaddr_get_len(&stun_sock->srv_addr),
-                                    tdata);
+    status = pj_stun_session_send_msg(
+        stun_sock->stun_sess, INTERNAL_MSG_TOKEN, PJ_FALSE,
+        (stun_sock->conn_type == PJ_STUN_TP_UDP), &stun_sock->srv_addr,
+        pj_sockaddr_get_len(&stun_sock->srv_addr), tdata);
     if (status != PJ_SUCCESS && status != PJ_EPENDING)
         goto on_error;
 
@@ -1011,15 +997,12 @@ PJ_DEF(pj_status_t) pj_stun_sock_sendto( pj_stun_sock *stun_sock,
     } else {
 #if PJ_HAS_TCP
         if (stun_sock->is_outgoing) {
-            printf("IS_OUTGOING\n");
             status = pj_activesock_send(stun_sock->outgoing_sock, send_key,
                      pkt, &size, flag);
         } else if (stun_sock->incoming_sock_fd) {
-          printf("IS_INCOMING\n");
           status = pj_activesock_send(stun_sock->incoming_sock, send_key, pkt,
                                       &size, flag);
         } else {
-          printf("IS_MAIN\n");
           status = pj_activesock_send(stun_sock->main_sock, send_key, pkt,
                                       &size, flag);
         }

@@ -305,7 +305,7 @@ PJ_DEF(pj_status_t) pj_stun_client_tsx_send_msg(pj_stun_client_tsx *tsx,
         unsigned timeout;
 
         pj_assert(tsx->retransmit_timer.id == 0);
-        tsx->transmit_count = PJ_STUN_MAX_TRANSMIT_COUNT;
+        tsx->transmit_count = 0;
 
         timeout = tsx->rto_msec * 16;
         tsx->retransmit_time.sec = timeout / 1000;

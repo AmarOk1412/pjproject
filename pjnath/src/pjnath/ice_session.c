@@ -1814,10 +1814,10 @@ static pj_status_t send_connectivity_check(pj_ice_sess *ice,
      */
 
     /* Initiate STUN transaction to send the request */
-    status = pj_stun_session_send_msg(comp->stun_sess, msg_data, PJ_FALSE,
-                                      PJ_TRUE, &rcand->addr,
-                                      pj_sockaddr_get_len(&rcand->addr),
-                                      check->tdata);
+    status = pj_stun_session_send_msg(
+        comp->stun_sess, msg_data, PJ_FALSE,
+        (comp->stun_sess->conn_type == PJ_STUN_TP_UDP), &rcand->addr,
+        pj_sockaddr_get_len(&rcand->addr), check->tdata);
     if (status != PJ_SUCCESS) {
         check->tdata = NULL;
         pjnath_perror(ice->obj_name, "Error sending STUN request", status);
@@ -2791,9 +2791,9 @@ static pj_status_t on_stun_rx_request(pj_stun_session *sess,
     msg_data->has_req_data = PJ_FALSE;
 
     /* Send the response */
-    status = pj_stun_session_send_msg(sess, msg_data, PJ_TRUE, PJ_TRUE,
-                                      src_addr, src_addr_len, tdata);
-
+    status = pj_stun_session_send_msg(
+        sess, msg_data, PJ_TRUE, sess->conn_type == PJ_STUN_TP_UDP, src_addr,
+        src_addr_len, tdata);
 
     /*
      * Handling early check.

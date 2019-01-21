@@ -954,25 +954,23 @@ PJ_DEF(pj_status_t) pj_stun_session_send_msg( pj_stun_session *sess,
      */
     if (PJ_STUN_IS_REQUEST(tdata->msg->hdr.type)) {
 
-        /* Create STUN client transaction */
-        status = pj_stun_client_tsx_create(sess->cfg, tdata->pool,
-                                           sess->grp_lock,
-                                           &tsx_cb, &tdata->client_tsx);
-        PJ_ASSERT_RETURN(status==PJ_SUCCESS, status);
-        pj_stun_client_tsx_set_data(tdata->client_tsx, (void*)tdata);
+      /* Create STUN client transaction */
+      status = pj_stun_client_tsx_create(sess->cfg, tdata->pool, sess->grp_lock,
+                                         &tsx_cb, &tdata->client_tsx);
+      PJ_ASSERT_RETURN(status == PJ_SUCCESS, status);
+      pj_stun_client_tsx_set_data(tdata->client_tsx, (void *)tdata);
 
-        /* Save the remote address */
-        tdata->addr_len = addr_len;
-        tdata->dst_addr = server;
+      /* Save the remote address */
+      tdata->addr_len = addr_len;
+      tdata->dst_addr = server;
 
-        /* Send the request! */
-        status = pj_stun_client_tsx_send_msg(tdata->client_tsx, retransmit,
-                                             tdata->pkt,
-                                             (unsigned)tdata->pkt_size);
-        if (status != PJ_SUCCESS && status != PJ_EPENDING) {
-            pj_stun_msg_destroy_tdata(sess, tdata);
-            LOG_ERR_(sess, "Error sending STUN request", status);
-            goto on_return;
+      /* Send the request! */
+      status = pj_stun_client_tsx_send_msg(
+          tdata->client_tsx, retransmit, tdata->pkt, (unsigned)tdata->pkt_size);
+      if (status != PJ_SUCCESS && status != PJ_EPENDING) {
+        pj_stun_msg_destroy_tdata(sess, tdata);
+        LOG_ERR_(sess, "Error sending STUN request", status);
+        goto on_return;
         }
 
         /* Add to pending request list */
@@ -1061,7 +1059,6 @@ PJ_DEF(pj_status_t) pj_stun_session_respond( pj_stun_session *sess,
         pj_grp_lock_release(sess->grp_lock);
         return status;
     }
-
     status = pj_stun_session_send_msg(sess, token, cache, PJ_FALSE,
                                       dst_addr,  addr_len, tdata);
 
