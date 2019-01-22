@@ -1785,10 +1785,13 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
                 dest_addr_len = dst_addr_len;
             }
 
-            printf("###########pj_stun_sock_sendto %i\n", size);
-            status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, pkt,
-                                         (unsigned)size, 0, dest_addr,
-                                         dest_addr_len);
+            if (comp->stun[tp_idx].sock) {
+                status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, pkt,
+                                            (unsigned)size, 0, dest_addr,
+                                            dest_addr_len);
+            } else {
+                status = PJ_EINVALIDOP;
+            }
     } else {
         pj_assert(!"Invalid transport ID");
         status = PJ_EINVALIDOP;

@@ -1918,6 +1918,10 @@ static pj_status_t perform_check(pj_ice_sess *ice,
     status = send_connectivity_check(&ice, &clist, check_id, nominate, msg_data);
 #endif
 
+    check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_IN_PROGRESS,
+                    PJ_SUCCESS);
+    pj_log_pop_indent();
+
     return status;
 }
 
