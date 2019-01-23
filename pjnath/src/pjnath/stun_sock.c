@@ -512,10 +512,12 @@ pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
     if (!stun_sock)
       return PJ_FALSE;
 
-    /* Log socket error */
+    /* Log socket error or disconnection */
     if (status != PJ_SUCCESS) {
-      PJ_PERROR(2, (stun_sock->obj_name, status, "read() error"));
-      return PJ_FALSE;
+        if (stun_sock->conn_type == PJ_STUN_TP_UDP || status != PJ_EEOF) {
+            PJ_PERROR(2, (stun_sock->obj_name, status, "read() error"));
+        }
+        return PJ_FALSE;
     }
 
     pj_sockaddr_t *rx_sock;
