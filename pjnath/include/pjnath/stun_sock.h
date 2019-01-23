@@ -508,13 +508,7 @@ PJ_DECL(pj_status_t) pj_stun_sock_connect_active(pj_stun_sock *stun_sock,
                      pj_sockaddr* remote_addr);
 #endif
 
-/**
- * @}
- */
-
-PJ_END_DECL
-
-struct pj_stun_sock
+typedef struct pj_stun_sock
 {
     char                   *obj_name;       /* Log identification         */
     pj_pool_t              *pool;           /* Pool                       */
@@ -551,6 +545,12 @@ struct pj_stun_sock
     pj_uint16_t            tsx_id[6];       /* .. to match STUN msg       */
     pj_stun_session        *stun_sess;      /* STUN session               */
     pj_grp_lock_t          *grp_lock;       /* Session group lock         */
-};
+} pj_stun_sock;
+
+/**
+ * @}
+ */
+
+PJ_END_DECL
 
 #endif	/* __PJNATH_STUN_SOCK_H__ */
