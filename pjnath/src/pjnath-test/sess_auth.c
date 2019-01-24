@@ -577,8 +577,8 @@ static int run_client_test(const char *title,
     /* Send the request */
     status = pj_stun_session_send_msg(
         client->sess, NULL, PJ_FALSE,
-        (client->sess->conn_type == PJ_STUN_TP_UDP), &server->addr,
-        pj_sockaddr_get_len(&server->addr), tdata);
+        (pj_stun_session_tp_type(client->sess) == PJ_STUN_TP_UDP),
+        &server->addr, pj_sockaddr_get_len(&server->addr), tdata);
     if (status != PJ_SUCCESS) {
 	destroy_client_server();
 	return -270;

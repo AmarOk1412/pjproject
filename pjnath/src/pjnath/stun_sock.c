@@ -238,7 +238,6 @@ PJ_DEF(pj_status_t) pj_stun_sock_create( pj_stun_config *cfg,
         pj_stun_session_cb sess_cb;
 
         pj_bzero(&sess_cb, sizeof(sess_cb));
-        // TODO(sblin)
         sess_cb.on_request_complete = &sess_on_request_complete;
         sess_cb.on_send_msg = &sess_on_send_msg;
         status = pj_stun_session_create(&stun_sock->cfg,
@@ -1148,11 +1147,12 @@ on_outgoing_connected(pj_activesock_t *asock, pj_status_t status)
       return PJ_FALSE;
     };
 
-    if (!stun_sock->stun_sess->cb.on_tcp_connected) {
+    pj_stun_session_cb *cb = pj_stun_session_callback(stun_sock->stun_sess);
+    if (!cb->on_peer_connection) {
       return PJ_FALSE;
     }
 
-    (stun_sock->stun_sess->cb.on_tcp_connected)(stun_sock, status);
+    (cb->on_peer_connection)(stun_sock, status);
     return PJ_TRUE;
 }
 

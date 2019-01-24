@@ -333,10 +333,15 @@ typedef struct pj_stun_session_cb
 				    void *token,
 				    const pj_sockaddr_t *src_addr,
 				    unsigned src_addr_len);
-
-#if PJ_HAS_TCP
-    void (*on_tcp_connected)(pj_stun_sock *stun_sock, pj_status_t status);
-#endif
+    /**
+     * Notification when STUN session get a ConnectionAttempt indication.
+     *
+     * @param stun_sock	The STUN client transport.
+     * @param status    PJ_SUCCESS when connection is made, or any errors
+     *                  if the connection has failed (or if the peer has
+     *                  disconnected after an established connection).
+     */
+    void (*on_peer_connection)(pj_stun_sock *stun_sock, pj_status_t status);
 
 } pj_stun_session_cb;
 
@@ -782,43 +787,29 @@ PJ_DECL(pj_status_t) pj_stun_session_on_rx_pkt(pj_stun_session *sess,
 PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
 					pj_stun_tx_data *tdata);
 
+/**
+ *
+ * @param sess	    The STUN session.
+ *
+ * @return	    The callback linked to the STUN session
+ */
+PJ_DECL(pj_stun_session_cb*)
+pj_stun_session_callback(pj_stun_session *sess);
+
+/**
+ *
+ * @param sess	    The STUN session.
+ *
+ * @return	    The connection type linked to the STUN session
+ */
+PJ_DECL(pj_stun_tp_type)
+pj_stun_session_tp_type(pj_stun_session *sess);
+
+
 
 /**
  * @}
  */
-
- struct pj_stun_session
- {
-     pj_stun_config        *cfg;
-     pj_pool_t                *pool;
-     pj_grp_lock_t        *grp_lock;
-     pj_stun_session_cb         cb;
-     void                *user_data;
-     pj_bool_t                 is_destroying;
-
-     pj_bool_t                 use_fingerprint;
-
-     pj_pool_t                *rx_pool;
-
- #if PJ_LOG_MAX_LEVEL >= 5
-     char                 dump_buf[1000];
- #endif
-     unsigned                 log_flag;
-
-     pj_stun_auth_type         auth_type;
-     pj_stun_auth_cred         cred;
-     int                         auth_retry;
-     pj_str_t                 next_nonce;
-     pj_str_t                 server_realm;
-
-     pj_str_t                 srv_name;
-
-     pj_stun_tx_data         pending_request_list;
-     pj_stun_tx_data         cached_response_list;
-
-     pj_stun_tp_type         conn_type;
- };
-
 
 PJ_END_DECL
 

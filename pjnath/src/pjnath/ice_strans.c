@@ -104,8 +104,7 @@ static void           ice_rx_data(pj_ice_sess *ice,
                                unsigned src_addr_len);
 static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
                                            const pj_ice_sess_cand *lcand,
-                                           const pj_ice_sess_cand *rcand,
-                                           pj_ice_msg_data *msg_data);
+                                           const pj_ice_sess_cand *rcand);
 
 
 /* STUN socket callbacks */
@@ -396,7 +395,6 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
         cand->local_pref = RELAY_PREF;
         cand->transport_id = tp_id;
         cand->comp_id = (pj_uint8_t) comp->comp_id;
-        // TODO(sblin) really passive?
         cand->transport = turn_cfg->conn_type == PJ_TURN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
     }
 
@@ -621,7 +619,6 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     cand->local_pref = SRFLX_PREF;
     cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
     cand->comp_id = (pj_uint8_t) comp->comp_id;
-    // TODO(sblin) really passive?
     cand->transport = stun_cfg->conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
 
     /* Allocate and initialize STUN socket data */
@@ -1820,7 +1817,7 @@ static void ice_rx_data(pj_ice_sess *ice,
     }
 }
 
-static void on_tcp_connected(pj_stun_sock *stun_sock, pj_status_t status)
+static void on_peer_connection(pj_stun_sock *stun_sock, pj_status_t status)
 {
 
     sock_user_data *data;
@@ -1835,24 +1832,24 @@ static void on_tcp_connected(pj_stun_sock *stun_sock, pj_status_t status)
     comp = data->comp;
     ice_st = comp->ice_st;
 
-    ice_sess_on_tcp_connected(ice_st->ice, status);
+    ice_sess_on_peer_connection(ice_st->ice, status);
 }
 
 static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
                                            const pj_ice_sess_cand *lcand,
-                                           const pj_ice_sess_cand *rcand,
-                                           pj_ice_msg_data *msg_data)
+                                           const pj_ice_sess_cand *rcand)
 {
-    // TODO(sblin): Save first message to send and send it when ready
     pj_status_t status = PJ_EINVAL;
     pj_ice_strans *ice_st = (pj_ice_strans*)ice->user_data;
     for (unsigned i = 0; i < ice_st->comp_cnt; ++i) {
         pj_ice_strans_comp* comp = ice_st->comp[i];
         if (comp->stun[0].sock != NULL) {
             status = pj_stun_sock_connect_active(comp->stun[0].sock, &rcand->addr);
-            comp->stun[0].sock->stun_sess->cb.on_tcp_connected = &on_tcp_connected;
+            pj_stun_session_callback(comp->stun[0].sock->stun_sess)->on_peer_connection = &on_peer_connection;
         } else {
-            // TODO print error
+            PJ_PERROR(4, (comp->ice_st->obj_name, status,
+                          "Comp %d: ICE wait TCP failed.",
+                          comp->comp_id));
         }
     }
 

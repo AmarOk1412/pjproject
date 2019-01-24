@@ -568,8 +568,7 @@ typedef struct pj_ice_sess_cb
 
     pj_status_t (*on_wait_tcp_connection)(pj_ice_sess *ice,
                                           const pj_ice_sess_cand *src_addr,
-                                          const pj_ice_sess_cand *dest_addr,
-                                          pj_ice_msg_data *msg_data);
+                                          const pj_ice_sess_cand *dest_addr);
 } pj_ice_sess_cb;
 
 
@@ -1029,13 +1028,21 @@ PJ_DECL(pj_status_t) pj_ice_sess_on_rx_pkt(pj_ice_sess *ice,
 					   const pj_sockaddr_t *src_addr,
 					   int src_addr_len);
 
+/**
+ * Notification when ICE session get a ConnectionAttempt indication.
+ *
+ * @param ice   	The ICE session.
+ * @param status    PJ_SUCCESS when connection is made, or any errors
+ *                  if the connection has failed (or if the peer has
+ *                  disconnected after an established connection).
+ */
+PJ_DECL(void)
+ice_sess_on_peer_connection(pj_ice_sess *ice, pj_status_t status);
 
 
 /**
  * @}
  */
-
- PJ_DECL(void) ice_sess_on_tcp_connected(pj_ice_sess *ice, pj_status_t status);
 
 
 PJ_END_DECL

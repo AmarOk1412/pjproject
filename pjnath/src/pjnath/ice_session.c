@@ -288,11 +288,10 @@ static pj_status_t init_comp(pj_ice_sess *ice,
     sess_cb.on_send_msg = &on_stun_send_msg;
 
     /* Create STUN session for this candidate */
-    status = pj_stun_session_create(&ice->stun_cfg, NULL,
-                                    &sess_cb, PJ_TRUE,
-                                    ice->grp_lock,
-                                    &comp->stun_sess,
-                                  /*TODO (sblin)*/ PJ_STUN_TP_UDP);
+    status =
+        pj_stun_session_create(&ice->stun_cfg, NULL, &sess_cb, PJ_TRUE,
+                               ice->grp_lock, &comp->stun_sess,
+                               /*TODO (sblin)*/ PJ_STUN_TP_UDP);
     if (status != PJ_SUCCESS)
         return status;
 
@@ -1816,8 +1815,8 @@ static pj_status_t send_connectivity_check(pj_ice_sess *ice,
     /* Initiate STUN transaction to send the request */
     status = pj_stun_session_send_msg(
         comp->stun_sess, msg_data, PJ_FALSE,
-        (comp->stun_sess->conn_type == PJ_STUN_TP_UDP), &rcand->addr,
-        pj_sockaddr_get_len(&rcand->addr), check->tdata);
+        pj_stun_session_tp_type(comp->stun_sess) == PJ_STUN_TP_UDP,
+        &rcand->addr, pj_sockaddr_get_len(&rcand->addr), check->tdata);
     if (status != PJ_SUCCESS) {
         check->tdata = NULL;
         pjnath_perror(ice->obj_name, "Error sending STUN request", status);
@@ -1911,8 +1910,7 @@ static pj_status_t perform_check(pj_ice_sess *ice,
     if (lcand->transport == PJ_CAND_UDP) {
         status = send_connectivity_check(ice, clist, check_id, nominate, msg_data);
     } else if (lcand->transport == PJ_CAND_TCP_ACTIVE) {
-        // TODO(sblin) msg_data is useless
-        status = (*ice->cb.on_wait_tcp_connection)(ice, lcand, rcand, msg_data);
+        status = (*ice->cb.on_wait_tcp_connection)(ice, lcand, rcand);
     }
 #else
     status = send_connectivity_check(&ice, &clist, check_id, nominate, msg_data);
@@ -2250,18 +2248,8 @@ static pj_status_t on_stun_send_msg(pj_stun_session *sess,
     return status;
 }
 
-void ice_sess_on_tcp_connected(pj_ice_sess *ice, pj_status_t status)
+void ice_sess_on_peer_connection(pj_ice_sess *ice, pj_status_t status)
 {
-/** /
-    pj_ice_sess_check *check = &ice->clist.checks[ice->last_check_id];
-
-    if (status != PJ_SUCCESS)
-        check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED, status);
-    else
-        check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_SUCCEEDED, PJ_SUCCESS);
-    on_check_complete(ice, check);
-/**/
-
     // The TCP link is now ready. We can now send the first STUN message (send connectivity check)
     // This should trigger on_stun_request_complete when finished
 
@@ -2274,8 +2262,6 @@ void ice_sess_on_tcp_connected(pj_ice_sess *ice, pj_status_t status)
     }
 
     // TCP is correctly connected. Craft the message to send
-    // TODO(sblin): deduplicate code from perform_check
-    // TODO(sblin): possible to get msg_data directly like on_stun_request_complete???
     const pj_ice_sess_cand *lcand = check->lcand;
     const pj_ice_sess_cand *rcand = check->rcand;
     pj_ice_msg_data *msg_data = PJ_POOL_ZALLOC_T(check->tdata->pool, pj_ice_msg_data);
@@ -2533,7 +2519,7 @@ static void on_stun_request_complete(pj_stun_session *stun_sess,
                                       &check->lcand->base_addr,
                                       pj_sockaddr_get_len(&xaddr->sockaddr),
                                       &cand_id,
-                                      stun_sess->conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP: PJ_CAND_TCP_PASSIVE);
+                                      pj_stun_session_tp_type(stun_sess) == PJ_STUN_TP_UDP ? PJ_CAND_UDP: PJ_CAND_TCP_PASSIVE);
         if (status != PJ_SUCCESS) {
             check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED,
                             status);
@@ -2544,7 +2530,6 @@ static void on_stun_request_complete(pj_stun_session *stun_sess,
 
         /* Update local candidate */
         lcand = &ice->lcand[cand_id];
-
     }
 
     /* 7.1.2.2.3.  Constructing a Valid Pair
@@ -2796,7 +2781,7 @@ static pj_status_t on_stun_rx_request(pj_stun_session *sess,
 
     /* Send the response */
     status = pj_stun_session_send_msg(
-        sess, msg_data, PJ_TRUE, sess->conn_type == PJ_STUN_TP_UDP, src_addr,
+        sess, msg_data, PJ_TRUE, pj_stun_session_tp_type(sess) == PJ_STUN_TP_UDP, src_addr,
         src_addr_len, tdata);
 
     /*

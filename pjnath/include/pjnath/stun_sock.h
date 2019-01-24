@@ -43,11 +43,10 @@ PJ_BEGIN_DECL
  * @addtogroup PJNATH_STUN_SOCK
  * @{
  *
- * The STUN transport provides asynchronous UDP like socket transport
+ * The STUN transport provides asynchronous UDP or TCP like socket transport
  * with the additional STUN capability. It has the following features:
  *
- *  - API to send and receive UDP packets
- * TODO(sblin): update this
+ *  - API to send and receive packets
  *
  *  - multiplex STUN and non-STUN incoming packets and distinguish between
  *    STUN responses that belong to internal requests with application data
