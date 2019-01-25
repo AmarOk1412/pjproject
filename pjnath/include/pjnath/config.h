@@ -220,6 +220,14 @@
 #   define PJ_TURN_KEEP_ALIVE_SEC		    15
 #endif
 
+/**
+ * Maximal number of TCP data connection that a client can open/accept with
+ * peers.
+ */
+#ifndef PJ_TURN_MAX_TCP_CNX
+#   define PJ_TURN_MAX_TCP_CNX              32
+#endif
+
 
 /* **************************************************************************
  * ICE CONFIGURATION

@@ -796,6 +796,13 @@ PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
 PJ_DECL(pj_stun_session_cb*)
 pj_stun_session_callback(pj_stun_session *sess);
 
+PJ_DEF(void) pj_stun_session_get_server_cred(
+	pj_stun_session *sess,
+	pj_pool_t *pool, pj_str_t *nonce, pj_str_t *realm);
+
+PJ_DEF(void) pj_stun_session_set_server_cred(
+	pj_stun_session *sess, const pj_str_t *nonce, pj_str_t *realm);
+
 /**
  *
  * @param sess	    The STUN session.
