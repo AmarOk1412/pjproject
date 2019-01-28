@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2028-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_STUN_SOCK_H__
 #define __PJNATH_STUN_SOCK_H__
@@ -24,13 +25,16 @@
  * @file stun_sock.h
  * @brief STUN aware socket transport
  */
-#include <pjnath/stun_config.h>
-#include <pjlib-util/resolver.h>
+#include <pj/activesock.h>
 #include <pj/ioqueue.h>
 #include <pj/lock.h>
+#include <pj/pool.h>
 #include <pj/sock.h>
 #include <pj/sock_qos.h>
-
+#include <pjlib-util/resolver.h>
+#include <pjlib-util/srv_resolver.h>
+#include <pjnath/stun_config.h>
+#include <pjnath/stun_session.h>
 
 PJ_BEGIN_DECL
 
@@ -87,9 +91,17 @@ typedef enum pj_stun_sock_op
     /**
      * IP address change notification from the keep-alive operation.
      */
-    PJ_STUN_SOCK_MAPPED_ADDR_CHANGE
+    PJ_STUN_SOCK_MAPPED_ADDR_CHANGE,
 
+    /**
+     * STUN session was destroyed.
+     */
+    PJ_STUN_SESS_DESTROYED,
 
+    /**
+     * TCP fails to connect
+     */
+    PJ_STUN_TCP_CONNECT_ERROR
 } pj_stun_sock_op;
 
 
@@ -207,6 +219,11 @@ typedef struct pj_stun_sock_info
      * Array of interface address aliases.
      */
     pj_sockaddr	    aliases[PJ_ICE_ST_MAX_CAND];
+
+    /**
+     * The tranport type of the socket
+     */
+    pj_stun_tp_type conn_type;
 
 } pj_stun_sock_info;
 
@@ -332,7 +349,6 @@ PJ_DECL(const char*) pj_stun_sock_op_name(pj_stun_sock_op op);
  */
 PJ_DECL(void) pj_stun_sock_cfg_default(pj_stun_sock_cfg *cfg);
 
-
 /**
  * Create the STUN transport using the specified configuration. Once
  * the STUN transport has been create, application should call
@@ -342,7 +358,9 @@ PJ_DECL(void) pj_stun_sock_cfg_default(pj_stun_sock_cfg *cfg);
  *			things the ioqueue and timer heap instance for
  *			the operation of this transport.
  * @param af		Address family of socket. Currently pj_AF_INET()
- *			and pj_AF_INET6() are supported. 
+ *			and pj_AF_INET6() are supported.
+ * @param conn_type    Connection type to the STUN server. Both TCP and
+ *                     UDP are supported.
  * @param name		Optional name to be given to this transport to
  *			assist debugging.
  * @param cb		Callback to receive events/data from the transport.
@@ -354,14 +372,11 @@ PJ_DECL(void) pj_stun_sock_cfg_default(pj_stun_sock_cfg *cfg);
  * @return		PJ_SUCCESS if the operation has been successful,
  *			or the appropriate error code on failure.
  */
-PJ_DECL(pj_status_t) pj_stun_sock_create(pj_stun_config *stun_cfg,
-					 const char *name,
-					 int af,
-					 const pj_stun_sock_cb *cb,
-					 const pj_stun_sock_cfg *cfg,
-					 void *user_data,
-					 pj_stun_sock **p_sock);
-
+PJ_DECL(pj_status_t)
+pj_stun_sock_create(pj_stun_config *stun_cfg, const char *name, int af,
+                    pj_stun_tp_type conn_type, const pj_stun_sock_cb *cb,
+                    const pj_stun_sock_cfg *cfg, void *user_data,
+                    pj_stun_sock **p_sock);
 
 /**
  * Start the STUN transport. This will start the DNS SRV resolution for
@@ -484,6 +499,53 @@ PJ_DECL(pj_status_t) pj_stun_sock_sendto(pj_stun_sock *stun_sock,
 					 unsigned flag,
 					 const pj_sockaddr_t *dst_addr,
 					 unsigned addr_len);
+
+/**
+ * Connect active socket to remove address
+ * @param stun_sock
+ * @param remote_addr the destination
+ */
+PJ_DECL(pj_status_t)
+pj_stun_sock_connect_active(pj_stun_sock *stun_sock, pj_sockaddr *remote_addr);
+
+// TODO (sblin) remove
+typedef struct pj_stun_sock {
+    char *obj_name;          /* Log identification         */
+    pj_pool_t *pool;         /* Pool                       */
+    void *user_data;         /* Application user data      */
+    pj_bool_t is_destroying; /* Destroy already called     */
+    int af;                  /* Address family             */
+    pj_stun_tp_type conn_type;
+    pj_stun_sock_cfg setting;
+    pj_stun_config cfg; /* STUN config (ioqueue etc)  */
+    pj_stun_sock_cb cb; /* Application callbacks      */
+
+    int ka_interval;         /* Keep alive interval        */
+    pj_timer_entry ka_timer; /* Keep alive timer.          */
+
+    pj_sockaddr srv_addr;    /* Resolved server addr       */
+    pj_sockaddr mapped_addr; /* Our public address         */
+
+    pj_dns_srv_async_query *q;  /* Pending DNS query          */
+    pj_sock_t main_sock_fd;     /* Socket descriptor          */
+    pj_activesock_t *main_sock; /* Active socket object       */
+    #if PJ_HAS_TCP
+    pj_bool_t is_outgoing;          /* If we are using outgoing_sock */
+    pj_sock_t outgoing_sock_fd;     /* Socket descriptor          */
+    pj_activesock_t *outgoing_sock; /* Active socket object       */
+    pj_activesock_t *incoming_sock; /* Active socket object       */
+    pj_sock_t incoming_sock_fd;     /* Socket descriptor          */
+    pj_sockaddr_t *incoming_addr;
+    pj_sockaddr_t *outgoing_addr;
+    int incoming_addr_len;
+    #endif
+    pj_ioqueue_op_key_t send_key;     /* Default send key for app   */
+    pj_ioqueue_op_key_t int_send_key; /* Send key for internal      */
+
+    pj_uint16_t tsx_id[6];      /* .. to match STUN msg       */
+    pj_stun_session *stun_sess; /* STUN session               */
+    pj_grp_lock_t *grp_lock;    /* Session group lock         */
+} pj_stun_sock;
 
 /**
  * @}

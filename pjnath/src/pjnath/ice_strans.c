@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,7 +103,9 @@ static void	   ice_rx_data(pj_ice_sess *ice,
 			       void *pkt, pj_size_t size,
 			       const pj_sockaddr_t *src_addr,
 			       unsigned src_addr_len);
-
+static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
+                                           const pj_ice_sess_cand *lcand,
+                                           const pj_ice_sess_cand *rcand);
 
 /* STUN socket callbacks */
 /* Notification when incoming packet has been received. */
@@ -237,6 +240,7 @@ PJ_DEF(void) pj_ice_strans_cfg_default(pj_ice_strans_cfg *cfg)
     pj_bzero(cfg, sizeof(*cfg));
 
     cfg->af = pj_AF_INET();
+    cfg->protocol = PJ_ICE_TP_UDP;
     pj_stun_config_init(&cfg->stun_cfg, NULL, 0, NULL, NULL);
     pj_ice_strans_stun_cfg_default(&cfg->stun);
     pj_ice_strans_turn_cfg_default(&cfg->turn);
@@ -252,6 +256,7 @@ PJ_DEF(void) pj_ice_strans_stun_cfg_default(pj_ice_strans_stun_cfg *cfg)
     pj_bzero(cfg, sizeof(*cfg));
 
     cfg->af = pj_AF_INET();
+    cfg->conn_type = PJ_TURN_TP_TCP; // TODO (sblin) UDP
     cfg->port = PJ_STUN_PORT;
     cfg->max_host_cands = 64;
     cfg->ignore_stun_error = PJ_FALSE;
@@ -389,6 +394,7 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
 	cand->local_pref = RELAY_PREF;
 	cand->transport_id = tp_id;
 	cand->comp_id = (pj_uint8_t) comp->comp_id;
+	cand->transport = turn_cfg->conn_type == PJ_TURN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
     }
 
     /* Allocate and initialize TURN socket data */
@@ -447,6 +453,7 @@ static pj_bool_t ice_cand_equals(pj_ice_sess_cand *lcand,
         || lcand->transport_id != rcand->transport_id
         || lcand->local_pref != rcand->local_pref
         || lcand->prio != rcand->prio
+		|| lcand->transport != rcand->transport
         || pj_sockaddr_cmp(&lcand->addr, &rcand->addr) != 0
         || pj_sockaddr_cmp(&lcand->base_addr, &rcand->base_addr) != 0)
     {
@@ -455,6 +462,114 @@ static pj_bool_t ice_cand_equals(pj_ice_sess_cand *lcand,
     
     return PJ_TRUE;
 }
+
+static pj_bool_t
+add_local_candidate(pj_ice_sess_cand *cand, unsigned idx,
+                    pj_stun_sock_info stun_sock_info, pj_ice_strans *ice_st,
+                    pj_ice_strans_comp *comp, pj_ice_cand_transport transport)
+{
+  pj_ice_strans_stun_cfg *stun_cfg = &ice_st->cfg.stun_tp[idx];
+  unsigned j;
+  pj_bool_t cand_duplicate = PJ_FALSE;
+  char addrinfo[PJ_INET6_ADDRSTRLEN+10];
+  const pj_sockaddr *addr = &stun_sock_info.aliases[idx];
+
+  /* Leave one candidate for relay */
+  if (comp->cand_cnt >= PJ_ICE_ST_MAX_CAND-1) {
+      PJ_LOG(4,(ice_st->obj_name, "Too many host candidates"));
+      return PJ_FALSE;
+  }
+
+  /* Ignore loopback addresses if cfg->stun.loop_addr is unset */
+  if (stun_cfg->loop_addr==PJ_FALSE) {
+      if (stun_cfg->af == pj_AF_INET() &&
+          (pj_ntohl(addr->ipv4.sin_addr.s_addr)>>24)==127)
+      {
+          return PJ_TRUE;
+      }
+      else if (stun_cfg->af == pj_AF_INET6()) {
+          pj_in6_addr in6addr = {{0}};
+          in6addr.s6_addr[15] = 1;
+          if (pj_memcmp(&in6addr, &addr->ipv6.sin6_addr,
+                        sizeof(in6addr))==0)
+          {
+              return PJ_TRUE;
+          }
+      }
+  }
+  pj_sockaddr_print(addr, addrinfo, sizeof(addrinfo), 3);
+
+  /* Ignore IPv6 link-local address */
+  if (stun_cfg->af == pj_AF_INET6()) {
+      const pj_in6_addr *a = &addr->ipv6.sin6_addr;
+      if (a->s6_addr[0] == 0xFE && (a->s6_addr[1] & 0xC0) == 0x80)
+          return PJ_TRUE;
+  }
+
+  cand = &comp->cand_list[comp->cand_cnt];
+
+  cand->type = PJ_ICE_CAND_TYPE_HOST;
+  cand->status = PJ_SUCCESS;
+  cand->local_pref = HOST_PREF;
+  cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
+  cand->comp_id = (pj_uint8_t) comp->comp_id;
+  cand->transport = transport;
+
+  char addstr[PJ_INET6_ADDRSTRLEN+10];
+  pj_sockaddr_print(addr, addstr,
+                            sizeof(addstr), 3);
+  pj_sockaddr_cp(&cand->addr, addr);
+  pj_sockaddr_cp(&cand->base_addr, addr);
+  pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
+
+  /* Check if not already in list */
+  for (j=0; j<comp->cand_cnt; j++) {
+      if (ice_cand_equals(cand, &comp->cand_list[j])) {
+          cand_duplicate = PJ_TRUE;
+          return PJ_FALSE;
+      }
+  }
+
+  if (cand_duplicate) {
+      PJ_LOG(4, (ice_st->obj_name,
+             "Comp %d: host candidate %s (tpid=%d) is a duplicate",
+             comp->comp_id, pj_sockaddr_print(&cand->addr, addrinfo,
+             sizeof(addrinfo), 3), cand->transport_id));
+
+      pj_bzero(&cand->addr, sizeof(cand->addr));
+      pj_bzero(&cand->base_addr, sizeof(cand->base_addr));
+      return PJ_TRUE;
+  } else {
+      comp->cand_cnt+=1;
+  }
+
+  pj_ice_calc_foundation(ice_st->pool, &cand->foundation,
+                         cand->type, &cand->base_addr);
+
+  /* Set default candidate with the preferred default
+   * address family
+   */
+  if (comp->ice_st->cfg.af != pj_AF_UNSPEC() &&
+      addr->addr.sa_family == comp->ice_st->cfg.af &&
+      comp->cand_list[comp->default_cand].base_addr.addr.sa_family !=
+      ice_st->cfg.af)
+  {
+      comp->default_cand = (unsigned)(cand - comp->cand_list);
+  }
+
+  if (transport == PJ_CAND_TCP_ACTIVE) {
+      // Use the port 9 (DISCARD Protocol) for TCP active candidates.
+      pj_sockaddr_set_port(&cand->addr, 9);
+  }
+
+  PJ_LOG(4,(ice_st->obj_name,
+            "Comp %d/%d: host candidate %s (tpid=%d) added",
+            comp->comp_id, comp->cand_cnt-1,
+            pj_sockaddr_print(&cand->addr, addrinfo,
+                              sizeof(addrinfo), 3),
+                              cand->transport_id));
+}
+
 
 
 static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
@@ -504,6 +619,7 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     cand->local_pref = SRFLX_PREF;
     cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
     cand->comp_id = (pj_uint8_t) comp->comp_id;
+	cand->transport = stun_cfg->conn_type == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE;
 
     /* Allocate and initialize STUN socket data */
     data = PJ_POOL_ZALLOC_T(ice_st->pool, sock_user_data);
@@ -511,9 +627,9 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
     data->transport_id = cand->transport_id;
 
     /* Create the STUN transport */
-    status = pj_stun_sock_create(&ice_st->cfg.stun_cfg, NULL,
-				 stun_cfg->af, &stun_sock_cb,
-				 sock_cfg, data, &comp->stun[idx].sock);
+    status = pj_stun_sock_create(&ice_st->cfg.stun_cfg, NULL, stun_cfg->af,
+                                 stun_cfg->conn_type, &stun_sock_cb, sock_cfg,
+                                 data, &comp->stun[idx].sock);
     if (status != PJ_SUCCESS)
 	return status;
 
@@ -581,116 +697,44 @@ static pj_status_t add_stun_and_host(pj_ice_strans *ice_st,
 	break;
     }
 
+
     /* Add local addresses to host candidates, unless max_host_cands
      * is set to zero.
      */
     if (stun_cfg->max_host_cands) {
-	pj_stun_sock_info stun_sock_info;
-	unsigned i, cand_cnt = 0;
+        pj_stun_sock_info stun_sock_info;
+        unsigned i, cand_cnt = 0;
+        pj_bool_t add_tcp_active_cand;
 
-	/* Enumerate addresses */
-	status = pj_stun_sock_get_info(comp->stun[idx].sock, &stun_sock_info);
-	if (status != PJ_SUCCESS) {
-	    PJ_PERROR(4,(ice_st->obj_name, status,
-			 "Failed in querying STUN socket info"));
-	    return status;
-	}
+        /* Enumerate addresses */
+        status = pj_stun_sock_get_info(comp->stun[idx].sock, &stun_sock_info);
+        if (status != PJ_SUCCESS) {
+            PJ_PERROR(4,(ice_st->obj_name, status,
+                "Failed in querying STUN socket info"));
+            return status;
+        }
 
-	for (i = 0; i < stun_sock_info.alias_cnt &&
-		    cand_cnt < stun_cfg->max_host_cands; ++i)
-	{
-	    unsigned j;
-	    pj_bool_t cand_duplicate = PJ_FALSE;
-	    char addrinfo[PJ_INET6_ADDRSTRLEN+10];
-	    const pj_sockaddr *addr = &stun_sock_info.aliases[i];
-
-	    /* Leave one candidate for relay */
-	    if (comp->cand_cnt >= PJ_ICE_ST_MAX_CAND-1) {
-		PJ_LOG(4,(ice_st->obj_name, "Too many host candidates"));
-		break;
-	    }
-
-	    /* Ignore loopback addresses if cfg->stun.loop_addr is unset */
-	    if (stun_cfg->loop_addr==PJ_FALSE) {
-		if (stun_cfg->af == pj_AF_INET() && 
-		    (pj_ntohl(addr->ipv4.sin_addr.s_addr)>>24)==127)
-		{
-		    continue;
-		}
-		else if (stun_cfg->af == pj_AF_INET6()) {
-		    pj_in6_addr in6addr = {{0}};
-		    in6addr.s6_addr[15] = 1;
-		    if (pj_memcmp(&in6addr, &addr->ipv6.sin6_addr,
-				  sizeof(in6addr))==0)
-		    {
-			continue;
-		    }
-		}
-	    }
-
-	    /* Ignore IPv6 link-local address, unless it is the default
-	     * address (first alias).
-	     */
-	    if (stun_cfg->af == pj_AF_INET6() && i != 0) {
-		const pj_in6_addr *a = &addr->ipv6.sin6_addr;
-		if (a->s6_addr[0] == 0xFE && (a->s6_addr[1] & 0xC0) == 0x80)
-		    continue;
-	    }
-
-	    cand = &comp->cand_list[comp->cand_cnt];
-
-	    cand->type = PJ_ICE_CAND_TYPE_HOST;
-	    cand->status = PJ_SUCCESS;
-	    cand->local_pref = HOST_PREF;
-	    cand->transport_id = CREATE_TP_ID(TP_STUN, idx);
-	    cand->comp_id = (pj_uint8_t) comp->comp_id;
-	    pj_sockaddr_cp(&cand->addr, addr);
-	    pj_sockaddr_cp(&cand->base_addr, addr);
-	    pj_bzero(&cand->rel_addr, sizeof(cand->rel_addr));
-            
-	    /* Check if not already in list */
-	    for (j=0; j<comp->cand_cnt; j++) {
-		if (ice_cand_equals(cand, &comp->cand_list[j])) {
-		    cand_duplicate = PJ_TRUE;
-		    break;
-		}
-	    }
-
-	    if (cand_duplicate) {
-		PJ_LOG(4, (ice_st->obj_name,
-		       "Comp %d: host candidate %s (tpid=%d) is a duplicate",
-		       comp->comp_id, pj_sockaddr_print(&cand->addr, addrinfo,
-		       sizeof(addrinfo), 3), cand->transport_id));
-
-		pj_bzero(&cand->addr, sizeof(cand->addr));
-		pj_bzero(&cand->base_addr, sizeof(cand->base_addr));
-		continue;
-	    } else {
-		comp->cand_cnt+=1;
-		cand_cnt++;
-	    }
-            
-	    pj_ice_calc_foundation(ice_st->pool, &cand->foundation,
-				   cand->type, &cand->base_addr);
-
-	    /* Set default candidate with the preferred default
-	     * address family
-	     */
-	    if (comp->ice_st->cfg.af != pj_AF_UNSPEC() &&
-	        addr->addr.sa_family == comp->ice_st->cfg.af &&
-	        comp->cand_list[comp->default_cand].base_addr.addr.sa_family !=
-	        ice_st->cfg.af)
-	    {
-	        comp->default_cand = (unsigned)(cand - comp->cand_list);
-	    }
-
-	    PJ_LOG(4,(ice_st->obj_name,
-		      "Comp %d/%d: host candidate %s (tpid=%d) added",
-		      comp->comp_id, comp->cand_cnt-1, 
-		      pj_sockaddr_print(&cand->addr, addrinfo,
-					sizeof(addrinfo), 3),
-					cand->transport_id));
-	}
+        add_tcp_active_cand = stun_sock_info.conn_type != PJ_STUN_TP_UDP;
+        for (i = 0; i < stun_sock_info.alias_cnt && i < stun_cfg->max_host_cands; ++i) {
+            if (!add_tcp_active_cand) {
+            	add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
+                              	  PJ_CAND_UDP);
+            } else {
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
+                                    PJ_CAND_TCP_PASSIVE);
+                /** RFC 6544, Section 4.1:
+				 * First, agents SHOULD obtain host candidates as described in
+				 * Section 5.1.  Then, each agent SHOULD "obtain" (allocate a
+				 * placeholder for) an active host candidate for each component of
+				 * each TCP-capable media stream on each interface that the host
+				 * has.  The agent does not yet have to actually allocate a port for
+				 * these candidates, but they are used for the creation of the check
+				 * lists.
+				 */
+                add_local_candidate(cand, i, stun_sock_info, ice_st, comp,
+                                    PJ_CAND_TCP_ACTIVE);
+            }
+        }
     }
 
     return status;
@@ -1099,6 +1143,7 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
     ice_cb.on_ice_complete = &on_ice_complete;
     ice_cb.on_rx_data = &ice_rx_data;
     ice_cb.on_tx_pkt = &ice_tx_pkt;
+    ice_cb.on_peer_connection = &ice_wait_tcp_connection;
 
     /* Create! */
     status = pj_ice_sess_create(&ice_st->cfg.stun_cfg, ice_st->obj_name, role,
@@ -1174,7 +1219,7 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
 					  &cand->foundation, &cand->addr,
 					  &cand->base_addr,  &cand->rel_addr,
 					  pj_sockaddr_get_len(&cand->addr),
-					  (unsigned*)&ice_cand_id);
+					  (unsigned*)&ice_cand_id, cand->transport);
 	    if (status != PJ_SUCCESS)
 		goto on_error;
 	}
@@ -1728,9 +1773,13 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
     	    dest_addr_len = dst_addr_len;
     	}
 
-	status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL,
-				     pkt, (unsigned)size, 0,
-				     dest_addr, dest_addr_len);
+        if (comp->stun[tp_idx].sock) {
+            status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, pkt,
+                                        (unsigned)size, 0, dest_addr,
+                                        dest_addr_len);
+        } else {
+            status = PJ_EINVALIDOP;
+        }
     } else {
 	pj_assert(!"Invalid transport ID");
 	status = PJ_EINVALIDOP;
@@ -1757,6 +1806,43 @@ static void ice_rx_data(pj_ice_sess *ice,
 	(*ice_st->cb.on_rx_data)(ice_st, comp_id, pkt, size,
 				 src_addr, src_addr_len);
     }
+}
+
+static void on_peer_connection(pj_stun_sock *stun_sock, pj_status_t status) {
+
+  sock_user_data *data;
+  pj_ice_strans_comp *comp;
+  pj_ice_strans *ice_st;
+  data = (sock_user_data *)pj_stun_sock_get_user_data(stun_sock);
+  if (data == NULL) {
+    /* We have disassociated ourselves from the STUN socket */
+    return;
+  }
+
+  comp = data->comp;
+  ice_st = comp->ice_st;
+
+  ice_sess_on_peer_connection(ice_st->ice, status);
+}
+
+static pj_status_t ice_wait_tcp_connection(pj_ice_sess *ice,
+                                           const pj_ice_sess_cand *lcand,
+                                           const pj_ice_sess_cand *rcand) {
+  pj_status_t status = PJ_EINVAL;
+  pj_ice_strans *ice_st = (pj_ice_strans *)ice->user_data;
+  for (unsigned i = 0; i < ice_st->comp_cnt; ++i) {
+    pj_ice_strans_comp *comp = ice_st->comp[i];
+    if (comp->stun[0].sock != NULL) {
+      status = pj_stun_sock_connect_active(comp->stun[0].sock, &rcand->addr);
+      pj_stun_session_callback(comp->stun[0].sock->stun_sess)
+          ->on_peer_connection = &on_peer_connection;
+    } else {
+      PJ_PERROR(4, (comp->ice_st->obj_name, status,
+                    "Comp %d: ICE wait TCP failed.", comp->comp_id));
+    }
+  }
+
+  return status;
 }
 
 /* Notification when incoming packet has been received from

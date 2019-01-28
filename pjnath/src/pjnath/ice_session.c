@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <pjnath/ice_session.h>
 #include <pj/addr_resolv.h>
@@ -288,10 +289,9 @@ static pj_status_t init_comp(pj_ice_sess *ice,
     sess_cb.on_send_msg = &on_stun_send_msg;
 
     /* Create STUN session for this candidate */
-    status = pj_stun_session_create(&ice->stun_cfg, NULL, 
-			            &sess_cb, PJ_TRUE,
-			            ice->grp_lock,
-				    &comp->stun_sess);
+    status = pj_stun_session_create(&ice->stun_cfg, NULL, &sess_cb, PJ_TRUE,
+                                      ice->grp_lock, &comp->stun_sess,
+                                      PJ_STUN_TP_UDP);
     if (status != PJ_SUCCESS)
 	return status;
 
@@ -715,7 +715,8 @@ PJ_DEF(pj_status_t) pj_ice_sess_add_cand(pj_ice_sess *ice,
 					 const pj_sockaddr_t *base_addr,
 					 const pj_sockaddr_t *rel_addr,
 					 int addr_len,
-					 unsigned *p_cand_id)
+					 unsigned *p_cand_id,
+					 pj_ice_cand_transport transport)
 {
     pj_ice_sess_cand *lcand;
     pj_status_t status = PJ_SUCCESS;
@@ -738,6 +739,7 @@ PJ_DEF(pj_status_t) pj_ice_sess_add_cand(pj_ice_sess *ice,
     lcand->comp_id = (pj_uint8_t)comp_id;
     lcand->transport_id = (pj_uint8_t)transport_id;
     lcand->type = type;
+    lcand->transport = transport;
     pj_strdup(ice->pool, &lcand->foundation, foundation);
     lcand->prio = CALC_CAND_PRIO(ice, type, local_pref, lcand->comp_id);
     pj_sockaddr_cp(&lcand->addr, addr);
@@ -959,6 +961,7 @@ static void check_set_state(pj_ice_sess *ice, pj_ice_sess_check *check,
 			    pj_ice_sess_check_state st, 
 			    pj_status_t err_code)
 {
+	if (check->state == st) return; // nothing to do
     pj_assert(check->state < PJ_ICE_SESS_CHECK_STATE_SUCCEEDED);
 
     LOG5((ice->obj_name, "Check %s: state changed from %s to %s",
@@ -1078,6 +1081,17 @@ static pj_status_t prune_checklist(pj_ice_sess *ice,
 		      GET_LCAND_ID(clist->checks[i].lcand)));
 		return PJNATH_EICENOHOSTCAND;
 	    }
+	}
+
+	/* Section 6.2, RFC 6544 (https://tools.ietf.org/html/rfc6544)
+	 * When the agent prunes the check list, it MUST also remove any pair
+	 * for which the local candidate is a passive TCP candidate
+	 */
+	if (clist->checks[i].lcand->transport == PJ_CAND_TCP_PASSIVE) {
+		pj_array_erase(clist->checks, sizeof(clist->checks[0]),
+					   clist->count, i);
+		--clist->count;
+		--i;
 	}
     }
 
@@ -1695,6 +1709,25 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
 		continue;
 	    }
 
+        /* Section 6.2, RFC 6544 (https://tools.ietf.org/html/rfc6544)
+         * As with UDP, check lists are formed only by full ICE implementations.
+         * When forming candidate pairs, the following types of TCP candidates
+         * can be paired with each other:
+         *
+         * Local           Remote
+         * Candidate       Candidate
+         * ---------------------------
+         * tcp-so          tcp-so
+         * tcp-active      tcp-passive
+         * tcp-passive     tcp-active
+         */
+        if ((lcand->transport == PJ_CAND_UDP && rcand->transport != PJ_CAND_UDP)
+            || (lcand->transport == PJ_CAND_TCP_PASSIVE && rcand->transport != PJ_CAND_TCP_ACTIVE)
+            || (lcand->transport == PJ_CAND_TCP_ACTIVE && rcand->transport != PJ_CAND_TCP_PASSIVE)
+            || (lcand->transport == PJ_CAND_TCP_SO && rcand->transport != PJ_CAND_TCP_SO))
+        {
+            continue;
+        }
 
 	    chk->lcand = lcand;
 	    chk->rcand = rcand;
@@ -1751,40 +1784,73 @@ PJ_DEF(pj_status_t) pj_ice_sess_create_check_list(
     return PJ_SUCCESS;
 }
 
-/* Perform check on the specified candidate pair. */
-static pj_status_t perform_check(pj_ice_sess *ice, 
-				 pj_ice_sess_checklist *clist,
-				 unsigned check_id,
-				 pj_bool_t nominate)
+static pj_status_t send_connectivity_check(pj_ice_sess *ice,
+											pj_ice_sess_checklist *clist,
+											unsigned check_id,
+											pj_bool_t nominate,
+											pj_ice_msg_data *msg_data)
 {
-    pj_ice_sess_comp *comp;
-    pj_ice_msg_data *msg_data;
     pj_ice_sess_check *check;
-    const pj_ice_sess_cand *lcand;
-    const pj_ice_sess_cand *rcand;
-    pj_uint32_t prio;
-    pj_status_t status;
-
     check = &clist->checks[check_id];
+    const pj_ice_sess_cand *lcand;
     lcand = check->lcand;
+    const pj_ice_sess_cand *rcand;
     rcand = check->rcand;
+    pj_ice_sess_comp *comp;
     comp = find_comp(ice, lcand->comp_id);
+    pj_status_t status;
+    /* Note that USERNAME and MESSAGE-INTEGRITY will be added by the
+     * STUN session.
+     */
 
-    LOG5((ice->obj_name, 
-	 "Sending connectivity check for check %s", 
-	 dump_check(ice->tmp.txt, sizeof(ice->tmp.txt), clist, check)));
-    pj_log_push_indent();
-
-    /* Create request */
-    status = pj_stun_session_create_req(comp->stun_sess, 
-					PJ_STUN_BINDING_REQUEST, PJ_STUN_MAGIC,
-					NULL, &check->tdata);
+    /* Initiate STUN transaction to send the request */
+    status = pj_stun_session_send_msg(
+        comp->stun_sess, msg_data, PJ_FALSE,
+        pj_stun_session_tp_type(comp->stun_sess) == PJ_STUN_TP_UDP,
+        &rcand->addr, pj_sockaddr_get_len(&rcand->addr), check->tdata);
     if (status != PJ_SUCCESS) {
-	pjnath_perror(ice->obj_name, "Error creating STUN request", status);
-	pj_log_pop_indent();
-	return status;
+        check->tdata = NULL;
+        pjnath_perror(ice->obj_name, "Error sending STUN request", status);
+        pj_log_pop_indent();
+        return status;
     }
 
+
+    return PJ_SUCCESS;
+}
+
+/* Perform check on the specified candidate pair. */
+static pj_status_t perform_check(pj_ice_sess *ice,
+                                 pj_ice_sess_checklist *clist,
+                                 unsigned check_id,
+                                 pj_bool_t nominate)
+{
+    pj_ice_sess_check *check;
+    check = &clist->checks[check_id];
+    const pj_ice_sess_cand *lcand;
+    lcand = check->lcand;
+    const pj_ice_sess_cand *rcand;
+    rcand = check->rcand;
+    pj_ice_sess_comp *comp;
+    comp = find_comp(ice, lcand->comp_id);
+    pj_status_t status;
+
+    pj_log_push_indent();
+    LOG5((ice->obj_name,
+         "Sending connectivity check for check %s",
+         dump_check(ice->tmp.txt, sizeof(ice->tmp.txt), clist, check)));
+
+    /* Create request */
+    status = pj_stun_session_create_req(comp->stun_sess,
+                                       PJ_STUN_BINDING_REQUEST, PJ_STUN_MAGIC,
+                                       NULL, &check->tdata);
+    if (status != PJ_SUCCESS) {
+        pjnath_perror(ice->obj_name, "Error creating STUN request", status);
+        pj_log_pop_indent();
+        return status;
+    }
+
+    pj_ice_msg_data *msg_data;
     /* Attach data to be retrieved later when STUN request transaction
      * completes and on_stun_request_complete() callback is called.
      */
@@ -1796,57 +1862,56 @@ static pj_status_t perform_check(pj_ice_sess *ice,
     msg_data->data.req.ckid = check_id;
 
     /* Add PRIORITY */
+    pj_uint32_t prio;
 #if PJNATH_ICE_PRIO_STD
-    prio = CALC_CAND_PRIO(ice, PJ_ICE_CAND_TYPE_PRFLX, 65535, 
-			  lcand->comp_id);
+    prio = CALC_CAND_PRIO(ice, PJ_ICE_CAND_TYPE_PRFLX, 65535,
+                          lcand->comp_id);
 #else
-    prio = CALC_CAND_PRIO(ice, PJ_ICE_CAND_TYPE_PRFLX, 0, 
-			  lcand->comp_id);
+    prio = CALC_CAND_PRIO(ice, PJ_ICE_CAND_TYPE_PRFLX, 0,
+                          lcand->comp_id);
 #endif
-    pj_stun_msg_add_uint_attr(check->tdata->pool, check->tdata->msg, 
-			      PJ_STUN_ATTR_PRIORITY, prio);
+
+
+    pj_stun_msg_add_uint_attr(check->tdata->pool, check->tdata->msg,
+                              PJ_STUN_ATTR_PRIORITY, prio);
 
     /* Add USE-CANDIDATE and set this check to nominated.
      * Also add ICE-CONTROLLING or ICE-CONTROLLED
      */
     if (ice->role == PJ_ICE_SESS_ROLE_CONTROLLING) {
-	if (nominate) {
-	    pj_stun_msg_add_empty_attr(check->tdata->pool, check->tdata->msg,
-				       PJ_STUN_ATTR_USE_CANDIDATE);
-	    check->nominated = PJ_TRUE;
-	}
+        if (nominate) {
+            pj_stun_msg_add_empty_attr(check->tdata->pool, check->tdata->msg,
+                                       PJ_STUN_ATTR_USE_CANDIDATE);
+            check->nominated = PJ_TRUE;
+        }
 
-	pj_stun_msg_add_uint64_attr(check->tdata->pool, check->tdata->msg, 
-				    PJ_STUN_ATTR_ICE_CONTROLLING,
-				    &ice->tie_breaker);
+        pj_stun_msg_add_uint64_attr(check->tdata->pool, check->tdata->msg,
+                                    PJ_STUN_ATTR_ICE_CONTROLLING,
+                                    &ice->tie_breaker);
 
     } else {
-	pj_stun_msg_add_uint64_attr(check->tdata->pool, check->tdata->msg, 
-				    PJ_STUN_ATTR_ICE_CONTROLLED,
-				    &ice->tie_breaker);
+        pj_stun_msg_add_uint64_attr(check->tdata->pool, check->tdata->msg,
+                                    PJ_STUN_ATTR_ICE_CONTROLLED,
+                                    &ice->tie_breaker);
     }
 
+    ice->last_check_id = check_id;
 
-    /* Note that USERNAME and MESSAGE-INTEGRITY will be added by the 
-     * STUN session.
-     */
-
-    /* Initiate STUN transaction to send the request */
-    status = pj_stun_session_send_msg(comp->stun_sess, msg_data, PJ_FALSE, 
-				      PJ_TRUE, &rcand->addr, 
-				      pj_sockaddr_get_len(&rcand->addr),
-				      check->tdata);
-    if (status != PJ_SUCCESS) {
-	check->tdata = NULL;
-	pjnath_perror(ice->obj_name, "Error sending STUN request", status);
-	pj_log_pop_indent();
-	return status;
+#if PJ_HAS_TCP
+    if (lcand->transport == PJ_CAND_UDP) {
+        status = send_connectivity_check(ice, clist, check_id, nominate, msg_data);
+    } else if (lcand->transport == PJ_CAND_TCP_ACTIVE) {
+        status = (*ice->cb.on_peer_connection)(ice, lcand, rcand);
     }
+#else
+    status = send_connectivity_check(&ice, &clist, check_id, nominate, msg_data);
+#endif
 
-    check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_IN_PROGRESS, 
-	            PJ_SUCCESS);
+    check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_IN_PROGRESS,
+                    PJ_SUCCESS);
     pj_log_pop_indent();
-    return PJ_SUCCESS;
+
+    return status;
 }
 
 
@@ -1890,11 +1955,14 @@ static pj_status_t start_periodic_check(pj_timer_heap_t *th,
 
 	if (check->state == PJ_ICE_SESS_CHECK_STATE_WAITING) {
 	    status = perform_check(ice, clist, i, ice->is_nominating);
-	    if (status != PJ_SUCCESS) {
-		check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED,
-				status);
-		on_check_complete(ice, check);
-	    }
+	    if (status == PJ_EPENDING) {
+			check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_IN_PROGRESS,
+							status);
+		} else if (status != PJ_SUCCESS) {
+			check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED,
+							status);
+			on_check_complete(ice, check);
+		}
 
 	    ++start_count;
 	    break;
@@ -2171,6 +2239,46 @@ static pj_status_t on_stun_send_msg(pj_stun_session *sess,
     return status;
 }
 
+void ice_sess_on_peer_connection(pj_ice_sess *ice, pj_status_t status)
+{
+    // The TCP link is now ready. We can now send the first STUN message (send connectivity check)
+    // This should trigger on_stun_request_complete when finished
+
+    // First, check if the TCP is really connected. If not, abort
+    pj_ice_sess_check *check = &ice->clist.checks[ice->last_check_id];
+    if (status != PJ_SUCCESS) {
+        check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED, status);
+        on_check_complete(ice, check);
+        return;
+    }
+
+    // TCP is correctly connected. Craft the message to send
+    const pj_ice_sess_cand *lcand = check->lcand;
+    const pj_ice_sess_cand *rcand = check->rcand;
+    pj_ice_msg_data *msg_data = PJ_POOL_ZALLOC_T(check->tdata->pool, pj_ice_msg_data);
+    msg_data->transport_id = lcand->transport_id;
+    msg_data->has_req_data = PJ_TRUE;
+    msg_data->data.req.ice = ice;
+    msg_data->data.req.clist = &ice->clist;
+    msg_data->data.req.ckid = ice->last_check_id;
+
+    pj_ice_sess_comp *comp = find_comp(ice, lcand->comp_id);
+    pj_status_t status_send_msg;
+    // Note that USERNAME and MESSAGE-INTEGRITY will be added by the
+     // STUN session.
+
+    // Initiate STUN transaction to send the request
+    status_send_msg = pj_stun_session_send_msg(comp->stun_sess, msg_data, PJ_FALSE,
+                                      PJ_FALSE, &rcand->addr,
+                                      pj_sockaddr_get_len(&rcand->addr),
+                                      check->tdata);
+    if (status_send_msg != PJ_SUCCESS) {
+        check->tdata = NULL;
+        pjnath_perror(ice->obj_name, "Error sending STUN request", status);
+        pj_log_pop_indent();
+    }
+}
+
 
 /* This callback is called when outgoing STUN request completed */
 static void on_stun_request_complete(pj_stun_session *stun_sess,
@@ -2401,7 +2509,8 @@ static void on_stun_request_complete(pj_stun_session *stun_sess,
 				      &check->lcand->base_addr, 
 				      &check->lcand->base_addr,
 				      pj_sockaddr_get_len(&xaddr->sockaddr),
-				      &cand_id);
+				      &cand_id,
+					  pj_stun_session_tp_type(stun_sess) == PJ_STUN_TP_UDP ? PJ_CAND_UDP : PJ_CAND_TCP_PASSIVE);
 	if (status != PJ_SUCCESS) {
 	    check_set_state(ice, check, PJ_ICE_SESS_CHECK_STATE_FAILED, 
 			    status);
@@ -2663,9 +2772,9 @@ static pj_status_t on_stun_rx_request(pj_stun_session *sess,
     msg_data->has_req_data = PJ_FALSE;
 
     /* Send the response */
-    status = pj_stun_session_send_msg(sess, msg_data, PJ_TRUE, PJ_TRUE,
-				      src_addr, src_addr_len, tdata);
-
+    status = pj_stun_session_send_msg(sess, msg_data, PJ_TRUE,
+                                      pj_stun_session_tp_type(sess) == PJ_STUN_TP_UDP,
+                                      src_addr, src_addr_len, tdata);
 
     /* 
      * Handling early check.

@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_CONFIG_H__
 #define __PJNATH_CONFIG_H__
@@ -241,7 +242,7 @@
  * Default: 8
  */
 #ifndef PJ_ICE_ST_MAX_CAND
-#   define PJ_ICE_ST_MAX_CAND			    8
+#   define PJ_ICE_ST_MAX_CAND			    32
 #endif
 
 

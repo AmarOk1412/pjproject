@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_ICE_SESSION_H__
 #define __PJNATH_ICE_SESSION_H__
@@ -163,6 +164,51 @@ typedef enum pj_ice_cand_type
 
 } pj_ice_cand_type;
 
+/**
+ * ICE candidates types like described by RFC 6544.
+ */
+typedef enum pj_ice_cand_transport {
+  /**
+   * Candidates UDP compatible
+   */
+  PJ_CAND_UDP,
+  /**
+   * Candidates sending outgoing TCP connections
+   */
+  PJ_CAND_TCP_ACTIVE,
+  /**
+   * Candidates accepting incoming TCP connections
+   */
+  PJ_CAND_TCP_PASSIVE,
+  /**
+   * Candidates capable of receiving incoming connections and sending
+   * connections
+   */
+  PJ_CAND_TCP_SO
+} pj_ice_cand_transport;
+
+/**
+ * ICE transport types, which will be used both to specify the connection
+ * type for reaching candidates and other client
+ */
+typedef enum pj_ice_tp_type {
+  /**
+   * UDP transport, which value corresponds to IANA protocol number.
+   */
+  PJ_ICE_TP_UDP = 17,
+
+  /**
+   * TCP transport, which value corresponds to IANA protocol number.
+   */
+  PJ_ICE_TP_TCP = 6,
+
+  /**
+   * TLS transport. The TLS transport will only be used as the connection
+   * type to reach the server and never as the allocation transport type.
+   */
+  PJ_ICE_TP_TLS = 255
+
+} pj_ice_tp_type;
 
 /** Forward declaration for pj_ice_sess */
 typedef struct pj_ice_sess pj_ice_sess;
@@ -308,6 +354,11 @@ typedef struct pj_ice_sess_cand
      * in any way by the ICE session.
      */
     pj_sockaddr		 rel_addr;
+
+    /**
+     * Transport used (TCP or UDP)
+     */
+    pj_ice_cand_transport transport;
 
 } pj_ice_sess_cand;
 
@@ -512,6 +563,18 @@ typedef struct pj_ice_sess_cb
 			      void *pkt, pj_size_t size,
 			      const pj_sockaddr_t *src_addr,
 			      unsigned src_addr_len);
+
+    /**
+      * Notification when ICE session get a new incoming connection
+      *
+      * @param ice			The ICE session.
+      * @param lcand		Local candidate
+      * @param rcand	Remote candidate
+      */
+    pj_status_t (*on_peer_connection)(pj_ice_sess *ice,
+                                      const pj_ice_sess_cand *lcand,
+                                      const pj_ice_sess_cand *rcand);
+
 } pj_ice_sess_cb;
 
 
@@ -669,6 +732,8 @@ struct pj_ice_sess
     	char txt[128];
 	char errmsg[PJ_ERR_MSG_SIZE];
     } tmp;
+
+    unsigned last_check_id;
 };
 
 
@@ -826,11 +891,9 @@ PJ_DECL(pj_status_t) pj_ice_sess_change_role(pj_ice_sess *ice,
 PJ_DECL(pj_status_t) pj_ice_sess_set_prefs(pj_ice_sess *ice,
 					   const pj_uint8_t prefs[4]);
 
-
-
 /**
  * Add a candidate to this ICE session. Application must add candidates for
- * each components ID before it can start pairing the candidates and 
+ * each components ID before it can start pairing the candidates and
  * performing connectivity checks.
  *
  * @param ice		ICE session instance.
@@ -846,20 +909,17 @@ PJ_DECL(pj_status_t) pj_ice_sess_set_prefs(pj_ice_sess *ice,
  * @param rel_addr	Optional related address.
  * @param addr_len	Length of addresses.
  * @param p_cand_id	Optional pointer to receive the candidate ID.
+ * @param transport	Candidate's type
  *
  * @return		PJ_SUCCESS if candidate is successfully added.
  */
-PJ_DECL(pj_status_t) pj_ice_sess_add_cand(pj_ice_sess *ice,
-					  unsigned comp_id,
-					  unsigned transport_id,
-					  pj_ice_cand_type type,
-					  pj_uint16_t local_pref,
-					  const pj_str_t *foundation,
-					  const pj_sockaddr_t *addr,
-					  const pj_sockaddr_t *base_addr,
-					  const pj_sockaddr_t *rel_addr,
-					  int addr_len,
-					  unsigned *p_cand_id);
+PJ_DECL(pj_status_t)
+pj_ice_sess_add_cand(pj_ice_sess *ice, unsigned comp_id, unsigned transport_id,
+                     pj_ice_cand_type type, pj_uint16_t local_pref,
+                     const pj_str_t *foundation, const pj_sockaddr_t *addr,
+                     const pj_sockaddr_t *base_addr,
+                     const pj_sockaddr_t *rel_addr, int addr_len,
+                     unsigned *p_cand_id, pj_ice_cand_transport transport);
 
 /**
  * Find default candidate for the specified component ID, using this
@@ -968,7 +1028,16 @@ PJ_DECL(pj_status_t) pj_ice_sess_on_rx_pkt(pj_ice_sess *ice,
 					   const pj_sockaddr_t *src_addr,
 					   int src_addr_len);
 
-
+/**
+ * Notification when ICE session get a new incoming connection
+ *
+ * @param ice       The ICE session.
+ * @param status    PJ_SUCCESS when connection is made, or any errors
+ *                  if the connection has failed (or if the peer has
+ *                  disconnected after an established connection).
+ */
+PJ_DECL(void)
+ice_sess_on_peer_connection(pj_ice_sess *ice, pj_status_t status);
 
 /**
  * @}

@@ -1,0 +1,11 @@
+*.depend
+*autoconf.h
+build
+*auto.h
+config_site.h
+bin/
+lib/
+build.mak
+*.log
+*.status
+

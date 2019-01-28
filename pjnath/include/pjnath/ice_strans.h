@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_ICE_STRANS_H__
 #define __PJNATH_ICE_STRANS_H__
@@ -253,6 +254,13 @@ typedef struct pj_ice_strans_stun_cfg
      */
     pj_bool_t		 ignore_stun_error;
 
+    /**
+     * Type of connection to the STUN server.
+     *
+     * Default is PJ_STUN_TP_UDP.
+     */
+    pj_stun_tp_type conn_type;
+
 } pj_ice_strans_stun_cfg;
 
 
@@ -267,6 +275,13 @@ typedef struct pj_ice_strans_turn_cfg
      * Default value is pj_AF_INET() (IPv4)
      */
     int			 af;
+
+    /**
+     * If we want to use UDP or TCP as described by RFC 6544.
+     * This will discover candidates via TCP sockets. Then it will
+     * transfer messages on the transport via TCP.
+     */
+    pj_ice_tp_type protocol;
 
     /**
      * Optional TURN socket settings. The default values will be
@@ -346,6 +361,13 @@ typedef struct pj_ice_strans_cfg
      * The default value is pj_AF_INET() (IPv4).
      */
     int			 af;
+
+    /**
+     * If we want to use UDP or TCP as described by RFC 6544.
+     * This will discover candidates via TCP sockets. Then it will
+     * transfer messages on the transport via TCP.
+     */
+    pj_ice_tp_type protocol;
 
     /**
      * STUN configuration which contains the timer heap and

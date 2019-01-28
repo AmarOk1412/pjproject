@@ -1,7 +1,8 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
+ * Copyright (C) 2018-2019 Sébastien Blin <sebastien.blin@savoirfairelinux.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef __PJNATH_STUN_SESSION_H__
 #define __PJNATH_STUN_SESSION_H__
@@ -174,6 +175,32 @@ typedef struct pj_stun_rx_data pj_stun_rx_data;
 /** Forward declaration for pj_stun_session */
 typedef struct pj_stun_session pj_stun_session;
 
+/** Forward declaration for pj_stun_sock */
+typedef struct pj_stun_sock pj_stun_sock; // TODO(sblin) remove
+
+/**
+ * STUN transport types, which will be used both to specify the connection
+ * type for reaching STUN server and the type of allocation transport to be
+ * requested to server (the REQUESTED-TRANSPORT attribute).
+ */
+typedef enum pj_stun_tp_type {
+  /**
+   * UDP transport, which value corresponds to IANA protocol number.
+   */
+  PJ_STUN_TP_UDP = 17,
+
+  /**
+   * TCP transport, which value corresponds to IANA protocol number.
+   */
+  PJ_STUN_TP_TCP = 6,
+
+  /**
+   * TLS transport. The TLS transport will only be used as the connection
+   * type to reach the server and never as the allocation transport type.
+   */
+  PJ_STUN_TP_TLS = 255
+
+} pj_stun_tp_type;
 
 /**
  * This is the callback to be registered to pj_stun_session, to send
@@ -307,6 +334,17 @@ typedef struct pj_stun_session_cb
 				    const pj_sockaddr_t *src_addr,
 				    unsigned src_addr_len);
 
+    /**
+     * Notification when STUN session get a ConnectionAttempt indication.
+     *
+     * @param stun_sock        The STUN client transport.
+     * @param status    PJ_SUCCESS when connection is made, or any errors
+     *                  if the connection has failed (or if the peer has
+     *                  disconnected after an established connection).
+     */
+    // TODO (sblin) remove stun_sock and use stun_sess instead
+    void (*on_peer_connection)(pj_stun_sock *stun_sock, pj_status_t status);
+
 } pj_stun_session_cb;
 
 
@@ -388,15 +426,15 @@ typedef enum pj_stun_sess_msg_log_flag
  * @param grp_lock	Optional group lock to be used by this session.
  * 			If NULL, the session will create one itself.
  * @param p_sess	Pointer to receive STUN session instance.
+ * @param conn_type if the session use UDP or TCP
  *
  * @return	    PJ_SUCCESS on success, or the appropriate error code.
  */
-PJ_DECL(pj_status_t) pj_stun_session_create(pj_stun_config *cfg,
-					    const char *name,
-					    const pj_stun_session_cb *cb,
-					    pj_bool_t fingerprint,
-					    pj_grp_lock_t *grp_lock,
-					    pj_stun_session **p_sess);
+PJ_DECL(pj_status_t)
+pj_stun_session_create(pj_stun_config *cfg, const char *name,
+                       const pj_stun_session_cb *cb, pj_bool_t fingerprint,
+                       pj_grp_lock_t *grp_lock,
+                       pj_stun_session **p_sess, pj_stun_tp_type conn_type);
 
 /**
  * Destroy the STUN session and all objects created in the context of
@@ -750,6 +788,23 @@ PJ_DECL(pj_status_t) pj_stun_session_on_rx_pkt(pj_stun_session *sess,
 PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
 					pj_stun_tx_data *tdata);
 
+/**
+ *
+ * @param sess     The STUN session.
+ *
+ * @return         The callback linked to the STUN session
+ */
+PJ_DECL(pj_stun_session_cb *)
+pj_stun_session_callback(pj_stun_session *sess);
+
+/**
+ *
+ * @param sess     The STUN session.
+ *
+ * @return         The connection type linked to the STUN session
+ */
+PJ_DECL(pj_stun_tp_type)
+pj_stun_session_tp_type(pj_stun_session *sess);
 
 /**
  * @}
