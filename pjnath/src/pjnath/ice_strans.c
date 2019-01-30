@@ -1379,6 +1379,9 @@ PJ_DEF(pj_status_t) pj_ice_strans_start_ice( pj_ice_strans *ice_st,
 	    pj_sockaddr addrs[PJ_ICE_ST_MAX_CAND];
 	    unsigned j, count=0;
 
+		if (!comp->turn[n].sock)
+			continue;
+
 	    /* Gather remote addresses for this component */
 	    for (j=0; j<rem_cand_cnt && count<PJ_ARRAY_SIZE(addrs); ++j) {
 		if (rem_cand[j].comp_id==i+1 &&

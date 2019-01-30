@@ -42,6 +42,7 @@ static const char *state_names[] =
     "Resolving",
     "Resolved",
     "Allocating",
+	"TcpBinding",
     "Ready",
     "Deallocating",
     "Deallocated",
@@ -208,6 +209,7 @@ static void on_timer_event(pj_timer_heap_t *th, pj_timer_entry *e);
 PJ_DEF(void) pj_turn_alloc_param_default(pj_turn_alloc_param *prm)
 {
     pj_bzero(prm, sizeof(*prm));
+	prm->peer_conn_type = PJ_TURN_TP_UDP;
 }
 
 /*
@@ -400,6 +402,11 @@ static void sess_shutdown(pj_turn_session *sess,
 	break;
     case PJ_TURN_STATE_ALLOCATING:
 	/* We need to wait until allocation complete */
+	sess->pending_destroy = PJ_TRUE;
+	can_destroy = PJ_FALSE;
+	break;
+    case PJ_TURN_STATE_CONNECTION_BINDING:
+	/* We need to wait until connection binding complete */
 	sess->pending_destroy = PJ_TRUE;
 	can_destroy = PJ_FALSE;
 	break;
@@ -651,7 +658,7 @@ PJ_DEF(pj_status_t) pj_turn_session_set_server( pj_turn_session *sess,
 	PJ_ASSERT_RETURN(default_port>0 && default_port<65536, PJ_EINVAL);
 	sess->default_port = (pj_uint16_t)default_port;
 
-	cnt = PJ_TURN_MAX_DNS_SRV_CNT;
+	cnt = 1;
 	ai = (pj_addrinfo*)
 	     pj_pool_calloc(sess->pool, cnt, sizeof(pj_addrinfo));
 
@@ -723,6 +730,9 @@ PJ_DEF(pj_status_t) pj_turn_session_alloc(pj_turn_session *sess,
     PJ_ASSERT_RETURN(sess->state>PJ_TURN_STATE_NULL && 
 		     sess->state<=PJ_TURN_STATE_RESOLVED, 
 		     PJ_EINVALIDOP);
+    PJ_ASSERT_RETURN(param->peer_conn_type == PJ_TURN_TP_UDP ||
+                     param->peer_conn_type == PJ_TURN_TP_TCP,
+                     PJ_EINVAL);
 
     /* Verify address family in allocation param */
     if (param && param->af) {
@@ -760,7 +770,7 @@ PJ_DEF(pj_status_t) pj_turn_session_alloc(pj_turn_session *sess,
     /* MUST include REQUESTED-TRANSPORT attribute */
     pj_stun_msg_add_uint_attr(tdata->pool, tdata->msg,
 			      PJ_STUN_ATTR_REQ_TRANSPORT, 
-			      PJ_STUN_SET_RT_PROTO(PJ_TURN_TP_UDP));
+			      PJ_STUN_SET_RT_PROTO(param->peer_conn_type));
 
     /* Include BANDWIDTH if requested */
     if (sess->alloc_param.bandwidth > 0) {
@@ -997,6 +1007,13 @@ PJ_DEF(pj_status_t) pj_turn_session_sendto( pj_turn_session *sess,
 	    return status;
 	}
     }
+
+	/* rfc6062: direct send if peer connection is TCP */
+	if (sess->alloc_param.peer_conn_type == PJ_TURN_TP_TCP) {
+		status = sess->cb.on_send_pkt(sess, pkt, pkt_len,
+									  addr, addr_len);
+		goto on_return;
+	}
 
     /* See if the peer is bound to a channel number */
     ch = lookup_ch_by_addr(sess, addr, pj_sockaddr_get_len(addr), 
@@ -1674,6 +1691,33 @@ static pj_status_t stun_on_rx_indication(pj_stun_session *stun,
 
     sess = (pj_turn_session*)pj_stun_session_get_user_data(stun);
 
+    if (msg->hdr.type == PJ_STUN_CONNECTION_ATTEMPT_INDICATION) {
+        pj_stun_uint_attr *connection_id_attr;
+        /* Get CONNECTION-ID attribute */
+        connection_id_attr = (pj_stun_uint_attr*)
+            pj_stun_msg_find_attr(msg, PJ_STUN_ATTR_CONNECTION_ID, 0);
+
+        /* Get XOR-PEER-ADDRESS attribute */
+        peer_attr = (pj_stun_xor_peer_addr_attr*)
+            pj_stun_msg_find_attr(msg, PJ_STUN_ATTR_XOR_PEER_ADDR, 0);
+
+        /* Must have both XOR-PEER-ADDRESS and CONNECTION-ID attributes */
+        if (!peer_attr || !connection_id_attr) {
+            PJ_LOG(4,(sess->obj_name, 
+                      "Received ConnectionAttempt indication with missing attributes"));
+            return PJ_EINVALIDOP;
+        }
+
+        /* Notify application */
+        if (sess->cb.on_peer_connection) {
+            (*sess->cb.on_peer_connection)(sess, connection_id_attr->value,
+                                           &peer_attr->sockaddr,
+                                           pj_sockaddr_get_len(&peer_attr->sockaddr),
+                                           PJ_SUCCESS);
+        }
+        return PJ_SUCCESS;
+    }
+
     /* Expecting Data Indication only */
     if (msg->hdr.type != PJ_STUN_DATA_INDICATION) {
 	PJ_LOG(4,(sess->obj_name, "Unexpected STUN %s indication",
@@ -2096,3 +2140,16 @@ on_return:
     pj_grp_lock_release(sess->grp_lock);
 }
 
+PJ_DEF(void) pj_turn_session_get_server_cred(pj_turn_session *sess,
+											 pj_pool_t *pool, pj_str_t *nonce,
+											 pj_str_t *realm)
+{
+	pj_stun_session_get_server_cred(sess->stun, pool, nonce, realm);
+}
+
+PJ_DEF(void) pj_turn_session_set_server_cred(pj_turn_session *sess,
+											 const pj_str_t *nonce,
+											 pj_str_t *realm)
+{
+	pj_stun_session_set_server_cred(sess->stun, nonce, realm);
+}
