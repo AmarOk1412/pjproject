@@ -1210,7 +1210,7 @@ PJ_DECL(pj_status_t) pj_turn_connect_peer(pj_turn_sock *turn_sock,
 			  "Connecting to %s",
 			  pj_sockaddr_print(&info.server, addrtxt,
 								sizeof(addrtxt), 3)));
-
+#if PJ_HAS_TCP
 	status = pj_activesock_start_connect(new_tcp_cnx->active_tcp_sock,
 										 turn_sock->pool,
 										 &info.server,
@@ -1225,7 +1225,7 @@ PJ_DECL(pj_status_t) pj_turn_connect_peer(pj_turn_sock *turn_sock,
 	    pj_turn_sock_destroy(turn_sock);
 	    return status;
 	}
-
+#endif
 	return PJ_SUCCESS;
 }
 
@@ -1329,10 +1329,10 @@ static pj_bool_t on_peer_connect_complete(pj_activesock_t *asock,
 	pj_bzero(&stun_cb, sizeof(stun_cb));
 	stun_cb.on_send_msg = &on_tcp_stun_send_msg;
 	stun_cb.on_request_complete = &on_tcp_stun_request_complete;
-	status = pj_stun_session_create(&turn_sock->cfg, NULL,
-									&stun_cb, PJ_FALSE, NULL,
-									&tcp_cnx->stun_sess);
-	if (status != PJ_SUCCESS) {
+        status =
+            pj_stun_session_create(&turn_sock->cfg, NULL, &stun_cb, PJ_FALSE,
+                                   NULL, &tcp_cnx->stun_sess, PJ_STUN_TP_TCP);
+        if (status != PJ_SUCCESS) {
 		pj_grp_lock_release(turn_sock->grp_lock);
         return PJ_FALSE;
 	}

@@ -154,10 +154,10 @@ static int init()
 #endif
 
 	name[strlen(name)-1] = '0'+i;
-	status = pj_stun_sock_create(&g.stun_config, name, pj_AF_INET(), 
-				     &stun_sock_cb, &ss_cfg,
-				     &g.peer[i], &g.peer[i].stun_sock);
-	if (status != PJ_SUCCESS) {
+        status = pj_stun_sock_create(&g.stun_config, name, pj_AF_INET(),
+                                     PJ_STUN_TP_UDP, &stun_sock_cb, &ss_cfg,
+                                     &g.peer[i], &g.peer[i].stun_sock);
+        if (status != PJ_SUCCESS) {
 	    my_perror("pj_stun_sock_create()", status);
 	    return status;
 	}
@@ -525,8 +525,9 @@ static void console_main(void)
 	    }
 	    peer = &g.peer[input[0]-'0'];
 	    sprintf(input, "Hello from peer%d", input[0]-'0');
+		pj_ssize_t size;
 	    pj_stun_sock_sendto(peer->stun_sock, NULL, input, strlen(input)+1, 0,
-				&g.relay_addr, pj_sockaddr_get_len(&g.relay_addr));
+				&g.relay_addr, pj_sockaddr_get_len(&g.relay_addr), &size);
 	    break;
 	case 'q':
 	    g.quit = PJ_TRUE;
