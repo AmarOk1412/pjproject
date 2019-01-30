@@ -184,6 +184,12 @@ typedef enum pj_turn_state_t
     PJ_TURN_STATE_ALLOCATING,
 
     /**
+     * TURN session has issued CONNECTION-BIND request and is waiting for response
+     * from the TURN server.
+     */
+    PJ_TURN_STATE_CONNECTION_BINDING,
+
+    /**
      * TURN session has successfully allocated relay resoruce and now is
      * ready to be used.
      */
@@ -298,6 +304,21 @@ typedef struct pj_turn_session_cb
 		     pj_turn_state_t old_state,
 		     pj_turn_state_t new_state);
 
+    /**
+     * Notification when TURN session get a ConnectionAttempt indication.
+     *
+     * @param sess			The TURN session.
+     * @param conn_id		The connection-id to use for connection binding.
+     * @param peer_addr	Peer address that tried to connect on the TURN server.
+     * @param addr_len		Length of the peer address.
+
+     */
+    void (*on_peer_connection)(pj_turn_session *sess,
+                               pj_uint32_t conn_id,
+                               const pj_sockaddr_t *peer_addr,
+                               unsigned addr_len,
+                               pj_status_t status);
+
 } pj_turn_session_cb;
 
 
@@ -339,6 +360,14 @@ typedef struct pj_turn_alloc_param
      */
     int	    af;
 
+    /**
+     * Type of connection to from TURN server to peer.
+     *
+     * Supported values: PJ_TURN_TP_UDP (rfc 5766), PJ_TURN_TP_TLS (rfc 6062)
+     *
+     * Default is PJ_TURN_TP_UDP.
+     */
+    pj_turn_tp_type peer_conn_type;
 
 } pj_turn_alloc_param;
 
@@ -741,6 +770,25 @@ PJ_DECL(pj_status_t) pj_turn_session_on_rx_pkt(pj_turn_session *sess,
 					       pj_size_t pkt_len,
 					       pj_size_t *parsed_len);
 
+/**
+ * Retrieve server credentials
+ * @param sess      The STUN session.
+ * @param pool      Linked pool
+ * @param nonce     Nonce credentials to fulfill
+ * @param realm     Realm credentials to fulfill
+ */
+PJ_DEF(void) pj_turn_session_get_server_cred(
+	pj_turn_session *sess,
+	pj_pool_t *pool, pj_str_t *nonce, pj_str_t *realm);
+
+/**
+ * Set server credentials
+ * @param sess      The STUN session.
+ * @param nonce     Nonce credentials
+ * @param realm     Realm credentials
+ */
+PJ_DEF(void) pj_turn_session_set_server_cred(
+	pj_turn_session *sess, const pj_str_t *nonce, pj_str_t *realm);
 
 /**
  * @}

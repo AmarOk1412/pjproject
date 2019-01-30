@@ -98,6 +98,23 @@ typedef struct pj_turn_sock_cb
 		     pj_turn_state_t old_state,
 		     pj_turn_state_t new_state);
 
+    /**
+     * Notification when TURN session get a ConnectionAttempt indication.
+     *
+     * @param turn_sock	The TURN client transport.
+     * @param conn_id		The connection-id to use for connection binding.
+     * @param peer_addr	Peer address that tried to connect on the TURN server.
+     * @param addr_len		Length of the peer address.
+     * @param status    PJ_SUCCESS when connection is made, or any errors
+     *                  if the connection has failed (or if the peer has
+     *                  disconnected after an established connection).
+     */
+    void (*on_peer_connection)(pj_turn_sock *turn_sock,
+                               pj_uint32_t conn_id,
+                               const pj_sockaddr_t *peer_addr,
+                               unsigned addr_len,
+                               pj_status_t status);
+
 } pj_turn_sock_cb;
 
 
@@ -446,6 +463,18 @@ PJ_DECL(pj_status_t) pj_turn_sock_bind_channel(pj_turn_sock *turn_sock,
 					       const pj_sockaddr_t *peer,
 					       unsigned addr_len);
 
+/**
+ * Connect to peer addr
+ * @param sock        The sock to connect
+ * @param conn_id     Linked id
+ * @param peer_addr   Remote address
+ * @param addr_len    Remote address length
+ * @return            PJ_SUCCESS if the operation has been successful
+ */
+PJ_DECL(pj_status_t) pj_turn_connect_peer(pj_turn_sock *sock,
+										  pj_uint32_t conn_id,
+										  const pj_sockaddr_t *peer_addr,
+										  unsigned addr_len);
 
 /**
  * @}

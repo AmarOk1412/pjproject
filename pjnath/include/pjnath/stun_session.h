@@ -750,11 +750,30 @@ PJ_DECL(pj_status_t) pj_stun_session_on_rx_pkt(pj_stun_session *sess,
 PJ_DECL(void) pj_stun_msg_destroy_tdata(pj_stun_session *sess,
 					pj_stun_tx_data *tdata);
 
+/**
+ * Retrieve server credentials
+ * @param sess      The STUN session.
+ * @param pool      Linked pool
+ * @param nonce     Nonce credentials to fulfill
+ * @param realm     Realm credentials to fulfill
+ */
+PJ_DEF(void)
+pj_stun_session_get_server_cred(pj_stun_session *sess, pj_pool_t *pool,
+                                pj_str_t *nonce, pj_str_t *realm);
+
+/**
+ * Set server credentials
+ * @param sess      The STUN session.
+ * @param nonce     Nonce credentials
+ * @param realm     Realm credentials
+ */
+PJ_DEF(void)
+pj_stun_session_set_server_cred(pj_stun_session *sess, const pj_str_t *nonce,
+                                pj_str_t *realm);
 
 /**
  * @}
  */
-
 
 PJ_END_DECL
 
