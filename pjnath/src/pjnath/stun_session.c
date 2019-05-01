@@ -1511,3 +1511,16 @@ on_return:
     return status;
 }
 
+PJ_DEF(void)
+pj_stun_session_get_server_cred(pj_stun_session *sess, pj_pool_t *pool,
+                                pj_str_t *nonce, pj_str_t *realm) {
+  pj_strdup(pool, nonce, &sess->next_nonce);
+  pj_strdup(pool, realm, &sess->server_realm);
+}
+
+PJ_DEF(void)
+pj_stun_session_set_server_cred(pj_stun_session *sess, const pj_str_t *nonce,
+                                pj_str_t *realm) {
+  pj_strdup(sess->pool, &sess->next_nonce, nonce);
+  pj_strdup(sess->pool, &sess->server_realm, realm);
+}
