@@ -1232,6 +1232,11 @@ PJ_DEF(unsigned) pj_ice_strans_get_running_comp_cnt(pj_ice_strans *ice_st)
     }
 }
 
+PJ_DECL(pj_ice_sess *) pj_ice_strans_get_ice_sess( pj_ice_strans *ice_st )
+{
+	return ice_st->ice;
+}
+
 
 /*
  * Get the ICE username fragment and password of the ICE session.
@@ -1378,6 +1383,9 @@ PJ_DEF(pj_status_t) pj_ice_strans_start_ice( pj_ice_strans *ice_st,
 	    pj_ice_strans_comp *comp = ice_st->comp[i];
 	    pj_sockaddr addrs[PJ_ICE_ST_MAX_CAND];
 	    unsigned j, count=0;
+
+		if (!comp->turn[n].sock)
+			continue;
 
 	    /* Gather remote addresses for this component */
 	    for (j=0; j<rem_cand_cnt && count<PJ_ARRAY_SIZE(addrs); ++j) {
@@ -2221,6 +2229,39 @@ static void turn_on_state(pj_turn_sock *turn_sock, pj_turn_state_t old_state,
 	}
 
 	sess_init_update(comp->ice_st);
+
+    } else if ((old_state == PJ_TURN_STATE_RESOLVING || old_state == PJ_TURN_STATE_ALLOCATING) &&
+               new_state >= PJ_TURN_STATE_DEALLOCATING)
+    {
+        pj_ice_sess_cand *cand = NULL;
+        unsigned i;
+
+        /* DNS resolution has failed! */
+        ++comp->turn[tp_idx].err_cnt;
+
+        /* Unregister ourself from the TURN relay */
+        pj_turn_sock_set_user_data(turn_sock, NULL);
+        comp->turn[tp_idx].sock = NULL;
+
+        /* Wait until initialization completes */
+        pj_grp_lock_acquire(comp->ice_st->grp_lock);
+
+        /* Find relayed candidate in the component */
+        for (i=0; i<comp->cand_cnt; ++i) {
+            if (comp->cand_list[i].type == PJ_ICE_CAND_TYPE_RELAYED &&
+                comp->cand_list[i].transport_id == data->transport_id)
+            {
+                cand = &comp->cand_list[i];
+                break;
+            }
+        }
+        pj_assert(cand != NULL);
+
+        pj_grp_lock_release(comp->ice_st->grp_lock);
+
+        cand->status = old_state == PJ_TURN_STATE_RESOLVING ? PJ_ERESOLVE : PJ_EINVALIDOP;
+
+        sess_init_update(comp->ice_st);
 
     } else if (new_state >= PJ_TURN_STATE_DEALLOCATING) {
 	pj_turn_session_info info;

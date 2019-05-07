@@ -933,6 +933,8 @@ PJ_DECL(pj_status_t) pj_ice_strans_sendto(pj_ice_strans *ice_st,
 					  int dst_addr_len);
 
 
+PJ_DECL(pj_ice_sess *) pj_ice_strans_get_ice_sess(pj_ice_strans *ice_st);
+
 /**
  * @}
  */

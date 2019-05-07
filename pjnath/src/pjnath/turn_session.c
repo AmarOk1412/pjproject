@@ -651,7 +651,7 @@ PJ_DEF(pj_status_t) pj_turn_session_set_server( pj_turn_session *sess,
 	PJ_ASSERT_RETURN(default_port>0 && default_port<65536, PJ_EINVAL);
 	sess->default_port = (pj_uint16_t)default_port;
 
-	cnt = PJ_TURN_MAX_DNS_SRV_CNT;
+	cnt = 1;
 	ai = (pj_addrinfo*)
 	     pj_pool_calloc(sess->pool, cnt, sizeof(pj_addrinfo));
 
