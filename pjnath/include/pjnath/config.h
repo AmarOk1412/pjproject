@@ -238,7 +238,7 @@
  * Default: 16
  */
 #ifndef PJ_ICE_MAX_CAND
-#   define PJ_ICE_MAX_CAND			    16
+#   define PJ_ICE_MAX_CAND			    256
 #endif
 
 
@@ -259,7 +259,7 @@
  * Default: 4 (one active and one passive for IPv4 and IPv6)
  */
 #ifndef PJ_ICE_MAX_STUN
-#   define PJ_ICE_MAX_STUN			    4
+#   define PJ_ICE_MAX_STUN			    6
 #endif
 
 /**
@@ -278,7 +278,7 @@
  * the maximum number of components (PJ_ICE_MAX_COMP) value.
  */
 #ifndef PJ_ICE_COMP_BITS
-#   define PJ_ICE_COMP_BITS			    1
+#   define PJ_ICE_COMP_BITS			    2
 #endif
 
 
@@ -329,7 +329,7 @@
  * Default: 32
  */
 #ifndef PJ_ICE_MAX_CHECKS
-#   define PJ_ICE_MAX_CHECKS			    32
+#   define PJ_ICE_MAX_CHECKS			    1024
 #endif
 
 
