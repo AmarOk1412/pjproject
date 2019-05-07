@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -248,7 +248,7 @@
  * Default: 8
  */
 #ifndef PJ_ICE_ST_MAX_CAND
-#   define PJ_ICE_ST_MAX_CAND			    8
+#   define PJ_ICE_ST_MAX_CAND			    32
 #endif
 
 
@@ -256,21 +256,20 @@
  * Maximum number of STUN transports for each ICE stream transport component.
  * Valid values are 1 - 64.
  *
- * Default: 2
+ * Default: 4 (one active and one passive for IPv4 and IPv6)
  */
 #ifndef PJ_ICE_MAX_STUN
-#   define PJ_ICE_MAX_STUN			    2
+#   define PJ_ICE_MAX_STUN			    4
 #endif
-
 
 /**
  * Maximum number of TURN transports for each ICE stream transport component.
  * Valid values are 1 - 64.
  *
- * Default: 2
+ * Default: 4 (one active and one passive for IPv4 and IPv6)
  */
 #ifndef PJ_ICE_MAX_TURN
-#   define PJ_ICE_MAX_TURN			    3
+#   define PJ_ICE_MAX_TURN			    4
 #endif
 
 

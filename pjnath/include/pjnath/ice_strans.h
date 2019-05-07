@@ -1,5 +1,5 @@
 /* $Id$ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -171,6 +171,17 @@ typedef struct pj_ice_strans_cb
 			       pj_ice_strans_op op,
 			       pj_status_t status);
 
+    /**
+     * This callback will be called when the ICE transport has
+     * sent data asynchronously.
+     *
+     * @param ice_st	    The ICE stream transport.
+     * @param comp_id	    The component ID.
+     * @param size	        Size of the packet.
+     */
+    void (*on_data_sent)(pj_ice_strans *ice_st, unsigned comp_id,
+                         pj_ssize_t size);
+
 } pj_ice_strans_cb;
 
 
@@ -253,6 +264,13 @@ typedef struct pj_ice_strans_stun_cfg
      */
     pj_bool_t		 ignore_stun_error;
 
+    /**
+     * Type of connection to the STUN server.
+     *
+     * Default is PJ_STUN_TP_UDP.
+     */
+    pj_stun_tp_type conn_type;
+
 } pj_ice_strans_stun_cfg;
 
 
@@ -267,6 +285,13 @@ typedef struct pj_ice_strans_turn_cfg
      * Default value is pj_AF_INET() (IPv4)
      */
     int			 af;
+
+    /**
+     * If we want to use UDP or TCP as described by RFC 6544.
+     * This will discover candidates via TCP sockets. Then it will
+     * transfer messages on the transport via TCP.
+     */
+    pj_ice_tp_type protocol;
 
     /**
      * Optional TURN socket settings. The default values will be
@@ -346,6 +371,13 @@ typedef struct pj_ice_strans_cfg
      * The default value is pj_AF_INET() (IPv4).
      */
     int			 af;
+
+    /**
+     * If we want to use UDP or TCP as described by RFC 6544.
+     * This will discover candidates via TCP sockets. Then it will
+     * transfer messages on the transport via TCP.
+     */
+    pj_ice_tp_type protocol;
 
     /**
      * STUN configuration which contains the timer heap and
@@ -932,6 +964,33 @@ PJ_DECL(pj_status_t) pj_ice_strans_sendto(pj_ice_strans *ice_st,
 					  const pj_sockaddr_t *dst_addr,
 					  int dst_addr_len);
 
+/**
+ * Send outgoing packet using this transport.
+ * Application can send data (normally RTP or RTCP packets) at any time
+ * by calling this function. This function takes a destination
+ * address as one of the arguments, and this destination address should
+ * be taken from the default transport address of the component (that is
+ * the address in SDP c= and m= lines, or in a=rtcp attribute).
+ * If ICE negotiation is in progress, this function will send the data
+ * to the destination address. Otherwise if ICE negotiation has completed
+ * successfully, this function will send the data to the nominated remote
+ * address, as negotiated by ICE.
+ *
+ * @param ice_st	The ICE stream transport.
+ * @param comp_id	Component ID.
+ * @param data		The data or packet to be sent.
+ * @param data_len	Size of data or packet, in bytes.
+ * @param dst_addr	The destination address.
+ * @param dst_addr_len	Length of destination address.
+ * @param size	        Length of sent packet.
+ *
+ * @return		PJ_SUCCESS if data is sent successfully. PJ_EPENDING if
+ * sending
+ */
+PJ_DECL(pj_status_t)
+pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
+                     pj_size_t data_len, const pj_sockaddr_t *dst_addr,
+                     int dst_addr_len, pj_ssize_t *size);
 
 PJ_DECL(pj_ice_sess *) pj_ice_strans_get_ice_sess(pj_ice_strans *ice_st);
 
