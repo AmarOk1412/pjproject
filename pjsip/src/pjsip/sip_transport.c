@@ -183,6 +183,13 @@ static struct transport_names_t
 	PJSIP_TRANSPORT_RELIABLE | PJSIP_TRANSPORT_SECURE
     },
     { 
+    PJSIP_TRANSPORT_DTLS,
+	5061, 
+	{"DTLS", 4}, 
+	"DTLS transport", 
+	PJSIP_TRANSPORT_SECURE
+    },
+    { 
 	PJSIP_TRANSPORT_SCTP, 
 	5060, 
 	{"SCTP", 4}, 
@@ -224,6 +231,13 @@ static struct transport_names_t
 	"TLS IPv6 transport",
 	PJSIP_TRANSPORT_RELIABLE | PJSIP_TRANSPORT_SECURE
     },
+    {
+	PJSIP_TRANSPORT_DTLS6,
+	5061,
+	{"DTLS", 4},
+	"DTLS IPv6 transport",
+	PJSIP_TRANSPORT_SECURE
+    },
 };
 
 static void tp_state_callback(pjsip_transport *tp,
@@ -249,7 +263,7 @@ static struct transport_names_t *get_tpname(pjsip_transport_type_e type)
  */
 PJ_DEF(pj_status_t) pjsip_transport_register_type( unsigned tp_flag,
 						   const char *tp_name,
-						   int def_port,
+                           int def_port,
 						   int *p_tp_type)
 {
     unsigned i;
@@ -1338,14 +1352,16 @@ PJ_DEF(pj_status_t) pjsip_tpmgr_register_tpfactory( pjsip_tpmgr *mgr,
 
     pj_lock_acquire(mgr->lock);
 
-    /* Check that no factory with the same type has been registered. */
+    /* Check that no factory with the same type and bound address has been
+     * registered. */
     status = PJ_SUCCESS;
     for (p=mgr->factory_list.next; p!=&mgr->factory_list; p=p->next) {
-	if (p->type == tpf->type) {
-	    status = PJSIP_ETYPEEXISTS;
-	    break;
-	}
-	if (p == tpf) {
+      if (p->type == tpf->type &&
+          !pj_sockaddr_cmp(&tpf->local_addr, &p->local_addr)) {
+        status = PJSIP_ETYPEEXISTS;
+        break;
+      }
+        if (p == tpf) {
 	    status = PJ_EEXISTS;
 	    break;
 	}
@@ -2166,10 +2182,10 @@ PJ_DEF(pj_status_t) pjsip_tpmgr_acquire_transport2(pjsip_tpmgr *mgr,
 		        pj_hash_get(mgr->table, &key, key_len, NULL);
 	}
 
+	unsigned flag = pjsip_transport_get_flag_from_type(type);
 	if (transport == NULL &&
 	    (!sel || sel->disable_connection_reuse == PJ_FALSE))
 	{
-	    unsigned flag = pjsip_transport_get_flag_from_type(type);
 	    const pj_sockaddr *remote_addr = (const pj_sockaddr*)remote;
 
 
@@ -2258,7 +2274,15 @@ PJ_DEF(pj_status_t) pjsip_tpmgr_acquire_transport2(pjsip_tpmgr *mgr,
 
 	} else {
 
-	    /* Find factory with type matches the destination type */
+        /* Make sure we don't use another factory than the one given if
+           secure flag is set */
+        if (flag & PJSIP_TRANSPORT_SECURE) {
+            TRACE_((THIS_FILE, "Can't create new TLS transport with no "
+                                "provided suitable TLS listener."));
+            return PJSIP_ETPNOTSUITABLE;
+        }
+
+            /* Find factory with type matches the destination type */
 	    factory = mgr->factory_list.next;
 	    while (factory != &mgr->factory_list) {
 		if (factory->type == type)

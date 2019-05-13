@@ -311,7 +311,8 @@ PJ_DEF(pj_status_t) pj_turn_session_create( const pj_stun_config *cfg,
     stun_cb.on_request_complete = &stun_on_request_complete;
     stun_cb.on_rx_indication = &stun_on_rx_indication;
     status = pj_stun_session_create(&sess->stun_cfg, sess->obj_name, &stun_cb,
-				    PJ_FALSE, sess->grp_lock, &sess->stun);
+                                    PJ_FALSE, sess->grp_lock, &sess->stun,
+                                    conn_type);
     if (status != PJ_SUCCESS) {
 	do_destroy(sess);
 	return status;
@@ -658,7 +659,7 @@ PJ_DEF(pj_status_t) pj_turn_session_set_server( pj_turn_session *sess,
 	PJ_ASSERT_RETURN(default_port>0 && default_port<65536, PJ_EINVAL);
 	sess->default_port = (pj_uint16_t)default_port;
 
-	cnt = PJ_TURN_MAX_DNS_SRV_CNT;
+	cnt = 1;
 	ai = (pj_addrinfo*)
 	     pj_pool_calloc(sess->pool, cnt, sizeof(pj_addrinfo));
 
