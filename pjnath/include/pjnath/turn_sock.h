@@ -87,6 +87,23 @@ typedef struct pj_turn_sock_cb
 		       unsigned addr_len);
 
     /**
+     * Notifification when asynchronous send operation has completed.
+     *
+     * @param turn_sock	The TURN transport.
+     * @param sent	If value is positive non-zero it indicates the
+     *			number of data sent. When the value is negative,
+     *			it contains the error code which can be retrieved
+     *			by negating the value (i.e. status=-sent).
+     *
+     * @return		Application should normally return PJ_TRUE to let
+     *			the STUN transport continue its operation. However
+     *			it must return PJ_FALSE if it has destroyed the
+     *			STUN transport in this callback.
+     */
+    pj_bool_t (*on_data_sent)(pj_turn_sock *sock,
+			       pj_ssize_t sent);
+
+    /**
      * Notification when TURN session state has changed. Application should
      * implement this callback to monitor the progress of the TURN session.
      *
@@ -470,6 +487,33 @@ PJ_DECL(pj_status_t) pj_turn_sock_sendto(pj_turn_sock *turn_sock,
 					unsigned addr_len);
 
 /**
+ * Send a data to the specified peer address via the TURN relay. This
+ * function will encapsulate the data as STUN Send Indication or TURN
+ * ChannelData packet and send the message to the TURN server. The TURN
+ * server then will send the data to the peer.
+ *
+ * The allocation (pj_turn_sock_alloc()) must have been successfully
+ * created before application can relay any data.
+ *
+ * @param turn_sock	The TURN transport instance.
+ * @param pkt		The data/packet to be sent to peer.
+ * @param pkt_len	Length of the data.
+ * @param peer_addr	The remote peer address (the ultimate destination
+ *			of the data, and not the TURN server address).
+ * @param addr_len	Length of the address.
+ * @param sent	    Size actually sent.
+ *
+ * @return		PJ_SUCCESS if the operation has been successful,
+ *			or the appropriate error code on failure.
+ */
+PJ_DECL(pj_status_t) pj_turn_sock_sendto2(pj_turn_sock *turn_sock,
+					const pj_uint8_t *pkt,
+					unsigned pkt_len,
+					const pj_sockaddr_t *peer_addr,
+					unsigned addr_len,
+					unsigned* sent);
+
+/**
  * Optionally establish channel binding for the specified a peer address.
  * This function will assign a unique channel number for the peer address
  * and request channel binding to the TURN server for this address. When
@@ -489,6 +533,17 @@ PJ_DECL(pj_status_t) pj_turn_sock_bind_channel(pj_turn_sock *turn_sock,
 					       const pj_sockaddr_t *peer,
 					       unsigned addr_len);
 
+
+/**
+ *  Check if peer is a dataconn
+ *
+ * @param turn_sock    The turn sock
+ * @param peer         The peer addr to check
+ *
+ * @return true if dataconn else false
+ */
+PJ_DECL(pj_bool_t)
+pj_turn_sock_has_dataconn(pj_turn_sock *turn_sock, const pj_sockaddr_t *peer);
 
 /**
  * @}

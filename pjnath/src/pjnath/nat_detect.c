@@ -329,7 +329,8 @@ PJ_DEF(pj_status_t) pj_stun_detect_nat_type2(const pj_sockaddr *server,
     sess_cb.on_request_complete = &on_request_complete;
     sess_cb.on_send_msg = &on_send_msg;
     status = pj_stun_session_create(stun_cfg, pool->obj_name, &sess_cb,
-				    PJ_FALSE, sess->grp_lock, &sess->stun_sess);
+                                    PJ_FALSE, sess->grp_lock, &sess->stun_sess,
+                                    PJ_STUN_TP_UDP);
     if (status != PJ_SUCCESS)
 	goto on_error;
 
@@ -874,10 +875,11 @@ static pj_status_t send_test(nat_detect_session *sess,
 	      pj_sockaddr_get_port(sess->cur_server)));
 
     /* Send the request */
-    status = pj_stun_session_send_msg(sess->stun_sess, NULL, PJ_TRUE,
-				      PJ_TRUE, sess->cur_server, 
-				      pj_sockaddr_get_len(sess->cur_server),
-				      sess->result[test_id].tdata);
+    status = pj_stun_session_send_msg(
+        sess->stun_sess, NULL, PJ_TRUE,
+        (pj_stun_session_tp_type(sess->stun_sess) == PJ_STUN_TP_UDP),
+        sess->cur_server, pj_sockaddr_get_len(sess->cur_server),
+        sess->result[test_id].tdata);
     if (status != PJ_SUCCESS)
 	goto on_error;
 
