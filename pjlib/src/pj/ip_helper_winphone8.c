@@ -40,6 +40,20 @@ PJ_DEF(pj_status_t) pj_enum_ip_interface(int af,
     return PJ_ENOTSUP;
 }
 
+PJ_DEF(pj_status_t) pj_enum_ip_interface(int af,
+					 unsigned *count,
+					 pj_flagged_sockaddr ifs[])
+{
+    PJ_UNUSED_ARG(af);
+    PJ_UNUSED_ARG(ifs);
+
+    PJ_ASSERT_RETURN(count, PJ_EINVAL);
+
+    *count = 0;
+
+    return PJ_ENOTSUP;
+}
+
 /*
  * Enumerate the IP routing table for this host.
  */

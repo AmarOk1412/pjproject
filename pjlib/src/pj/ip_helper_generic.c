@@ -25,6 +25,19 @@
 #include <pj/compat/socket.h>
 #include <pj/sock.h>
 
+#ifdef __linux__
+/* The following headers are used to get DEPRECATED addresses
+ * as specified in RFC 2462 Section 5.5.4
+ * https://tools.ietf.org/html/rfc2462#section-5.5.4
+ */
+#include <arpa/inet.h>
+#include <asm/types.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 /* Set to 1 to enable tracing */
 #if 0
 #   include <pj/log.h>
@@ -379,6 +392,143 @@ PJ_DEF(pj_status_t) pj_enum_ip_interface(int af,
     *p_cnt = start;
 
     return (*p_cnt != 0) ? PJ_SUCCESS : PJ_ENOTFOUND;
+}
+
+/* retrieve invalid addresses and store it in a string */
+static PJ_DEF(pj_status_t)
+get_ipv6_deprecated(unsigned *count, pj_sockaddr addr[])
+{
+	printf("get_ipv6_deprecated\n");
+#ifdef __linux__
+    struct {
+        struct nlmsghdr        nlmsg_info;
+        struct ifaddrmsg    ifaddrmsg_info;
+    } netlink_req;
+
+    int fd;
+
+    long pagesize = sysconf(_SC_PAGESIZE);
+
+    if (!pagesize)
+        pagesize = 4096; /* Assume pagesize is 4096 if sysconf() failed */
+
+    fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+    if(fd < 0) {
+        perror("socket initialization error: abort");
+        return;
+    }
+
+    int rtn;
+
+    bzero(&netlink_req, sizeof(netlink_req));
+
+    netlink_req.nlmsg_info.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+    netlink_req.nlmsg_info.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    netlink_req.nlmsg_info.nlmsg_type = RTM_GETADDR;
+    netlink_req.nlmsg_info.nlmsg_pid = getpid();
+
+    netlink_req.ifaddrmsg_info.ifa_family = AF_INET6;
+
+    rtn = send(fd, &netlink_req, netlink_req.nlmsg_info.nlmsg_len, 0);
+    if(rtn < 0) {
+        perror("send error: abort");
+        return;
+    }
+
+    char read_buffer[pagesize];
+    struct nlmsghdr *nlmsg_ptr;
+    int nlmsg_len;
+
+    size_t idx = 0;
+    while(1) {
+        int rtn;
+
+        bzero(read_buffer, pagesize);
+        rtn = recv(fd, read_buffer, pagesize, 0);
+		printf("RTN: %i %s\n", rtn, &read_buffer);
+        if(rtn < 0) {
+            perror ("recv(): ");
+            return;
+        }
+
+        nlmsg_ptr = (struct nlmsghdr *) read_buffer;
+        nlmsg_len = rtn;
+
+        if (nlmsg_len < sizeof (struct nlmsghdr)) {
+            perror ("Received an uncomplete netlink packet");
+            return;
+        }
+
+        printf("CRASH?....\n");
+        if (nlmsg_ptr->nlmsg_type == NLMSG_DONE)
+            break;
+        printf("NOP\n");
+        
+        for(; NLMSG_OK(nlmsg_ptr, nlmsg_len); nlmsg_ptr = NLMSG_NEXT(nlmsg_ptr, nlmsg_len)) {
+            struct ifaddrmsg *ifaddrmsg_ptr;
+            struct rtattr *rtattr_ptr;
+            int ifaddrmsg_len;
+
+            ifaddrmsg_ptr = (struct ifaddrmsg *) NLMSG_DATA(nlmsg_ptr);
+
+            if (ifaddrmsg_ptr->ifa_flags & IFA_F_DEPRECATED || ifaddrmsg_ptr->ifa_flags & IFA_F_TENTATIVE) {
+                rtattr_ptr = (struct rtattr *) IFA_RTA(ifaddrmsg_ptr);
+                ifaddrmsg_len = IFA_PAYLOAD(nlmsg_ptr);
+
+                for(;RTA_OK(rtattr_ptr, ifaddrmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, ifaddrmsg_len)) {
+                    switch(rtattr_ptr->rta_type) {
+                    case IFA_ADDRESS:
+                        // Check if addr can contains more data
+						printf("get_ipv6_deprecated2.7\n");
+                        if (idx >= *count) break;
+						printf("get_ipv6_deprecated 3\n");
+                        // Store deprecated IP
+						char deprecatedAddr[PJ_INET6_ADDRSTRLEN];
+                        inet_ntop(ifaddrmsg_ptr->ifa_family, RTA_DATA(rtattr_ptr),
+							&deprecatedAddr, sizeof(deprecatedAddr));
+                        ++idx;
+						pj_str_t pj_addr_str;
+						printf("get_ipv6_deprecated 4\n");
+						pj_cstr(&pj_addr_str, &deprecatedAddr);
+						printf("get_ipv6_deprecated 5\n");
+						pj_sockaddr_init(AF_INET6, &addr[idx], &pj_addr_str, 0);
+						printf("get_ipv6_deprecated 6\n");
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    close(fd);
+    *count = idx;
+#endif
+}
+
+PJ_DEF(pj_status_t) pj_enum_ip_interface2(int af,
+					 unsigned *p_cnt,
+					 pj_flagged_sockaddr ifs[])
+{
+    pj_sockaddr addrs[*p_cnt];
+    pj_enum_ip_interface(af, p_cnt, addrs);
+	pj_sockaddr deprecatedAddrs[*p_cnt];
+	unsigned depecatedCount = *p_cnt;
+	get_ipv6_deprecated(depecatedCount, deprecatedAddrs);
+    for (int i = 0; i < *p_cnt; ++i) {
+        ifs[i].addr = addrs[i];
+        ifs[i].deprecated = PJ_FALSE;
+		if (ifs[i].addr.addr.sa_family == pj_AF_INET6()) {
+			for (int j = 0; i < depecatedCount; ++j) {
+				if (pj_sockaddr_cmp(&ifs[i].addr, &deprecatedAddrs[j]) == 0) {
+					ifs[i].deprecated = PJ_TRUE;
+				}
+			}
+		}
+    }
+
+    return *p_cnt ? PJ_SUCCESS : PJ_ENOTFOUND;
 }
 
 /*

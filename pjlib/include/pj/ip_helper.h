@@ -52,6 +52,21 @@ typedef union pj_ip_route_entry
     } ipv4;
 } pj_ip_route_entry;
 
+/**
+ * This structure is used by pj_enum_ip_interface2 to add flags
+ * to enumerated pj_sockaddr. This can be used to detect
+ * deprecated IPv6 addresses.
+ */
+typedef struct pj_flagged_sockaddr
+{
+	pj_sockaddr addr;
+	/**
+	 * IPv6 addresses can have a DEPRECATED flag. This
+	 * information is stored into this variable.
+	 */
+	pj_bool_t deprecated;
+} pj_flagged_sockaddr;
+
 
 /**
  * Enumerate the local IP interfaces currently active in the host.
@@ -73,6 +88,25 @@ PJ_DECL(pj_status_t) pj_enum_ip_interface(int af,
 					  unsigned *count,
 					  pj_sockaddr ifs[]);
 
+/**
+ * Enumerate the local IP interfaces currently active in the host.
+ *
+ * @param af	    Family of the address to be retrieved. Application
+ *		    may specify pj_AF_UNSPEC() to retrieve all addresses,
+ *		    or pj_AF_INET() or pj_AF_INET6() to retrieve interfaces
+ *		    with specific address family.
+ * @param count	    On input, specify the number of entries. On output,
+ *		    it will be filled with the actual number of entries.
+ * @param ifs	    Array of socket (with flags) addresses, which address part
+ *		    will be filled with the interface address. The address
+ *		    family part will be initialized with the address
+ *		    family of the IP address.
+ *
+ * @return	    PJ_SUCCESS on success, or the appropriate error code.
+ */
+PJ_DECL(pj_status_t) pj_enum_ip_interface2(int af,
+					  unsigned *count,
+					  pj_flagged_sockaddr ifs[]);
 
 /**
  * Enumerate the IP routing table for this host.

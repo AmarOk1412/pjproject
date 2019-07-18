@@ -137,6 +137,20 @@ PJ_DEF(pj_status_t) pj_enum_ip_interface(int af,
     return start ? PJ_SUCCESS : PJ_ENOTFOUND;
 }
 
+PJ_DEF(pj_status_t) pj_enum_ip_interface2(int af,
+					 unsigned *p_cnt,
+					 pj_flagged_sockaddr ifs[])
+{
+    pj_sockaddr addrs[*p_cnt];
+    pj_enum_ip_interface(af, p_cnt, addrs);
+    for (int i = 0; i < *p_cnt; ++i) {
+        ifs[i].addr = addrs[i];
+        ifs[i].deprecated = PJ_FALSE;
+    }
+
+    return *p_cnt ? PJ_SUCCESS : PJ_ENOTFOUND;
+}
+
 /*
  * Enumerate the IP routing table for this host.
  */

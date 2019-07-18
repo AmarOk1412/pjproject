@@ -216,6 +216,34 @@ typedef struct sock_user_data
 } sock_user_data;
 
 
+static pj_bool_t is_ipv6_deprecated(const pj_sockaddr_in6* ipv6)
+{
+    unsigned count = PJ_ICE_ST_MAX_CAND;
+	pj_sockaddr to_compare;
+	pj_sockaddr_cp(&to_compare, ipv6);
+	pj_sockaddr_set_port(&to_compare, 0); // ensure port is 0 for comparaison
+    pj_flagged_sockaddr addrs[count];
+    pj_enum_ip_interface2(PJ_AF_INET6, &count, addrs);
+    for (int i = 0; i < count; ++i) {
+
+		char lip[PJ_INET6_ADDRSTRLEN+10];
+		char rip[PJ_INET6_ADDRSTRLEN+10];
+
+		printf("TEST %s \n", pj_sockaddr_print(&to_compare, lip, sizeof(lip), 3));
+		printf("VS %s \n", pj_sockaddr_print(&addrs[i].addr, lip, sizeof(lip), 3));
+
+
+        if (pj_sockaddr_cmp(&to_compare, &addrs[i].addr) == 0) {
+			printf("FOUND %i\n", addrs[i].deprecated);
+            return addrs[i].deprecated;
+        }
+    }
+
+	printf("RETURN FALSE\n");
+    return PJ_FALSE;
+}
+
+
 /* Validate configuration */
 static pj_status_t pj_ice_strans_cfg_check_valid(const pj_ice_strans_cfg *cfg)
 {
@@ -1164,6 +1192,22 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
 	    {
 	    	continue;
 	    }
+
+	    /**
+	     * Skip if we are trying to use a DEPRECATED ipv6 address
+	     */
+		printf("TEST\n");
+		
+		char lip[PJ_INET6_ADDRSTRLEN+10];
+
+		printf("TEST FOR %s \n", pj_sockaddr_print(&cand->addr, lip, sizeof(lip), 3));
+
+	    if (cand->addr.addr.sa_family == pj_AF_INET6()) {
+	        if (is_ipv6_deprecated(&cand->addr)) {
+	            continue;
+	        }
+	    }
+		printf("TESTED\n");
 
 	    /* Add the candidate */
 	    status = pj_ice_sess_add_cand(ice_st->ice, comp->comp_id,
