@@ -215,6 +215,22 @@ typedef struct sock_user_data
 
 } sock_user_data;
 
+static pj_bool_t is_ipv6_deprecated(const pj_sockaddr_in6* ipv6)
+{
+    unsigned count = PJ_ICE_ST_MAX_CAND;
+    pj_sockaddr to_compare;
+    pj_sockaddr_cp(&to_compare, ipv6);
+    pj_sockaddr_set_port(&to_compare, 0); // ensure port is 0 for comparaison
+    pj_flagged_sockaddr addrs[count];
+    pj_enum_ip_interface2(pj_AF_INET6(), &count, addrs);
+    for (int i = 0; i < count; ++i) {
+        if (pj_sockaddr_cmp(&to_compare, &addrs[i].addr) == 0) {
+            return addrs[i].deprecated;
+        }
+    }
+    return PJ_FALSE;
+}
+
 
 /* Validate configuration */
 static pj_status_t pj_ice_strans_cfg_check_valid(const pj_ice_strans_cfg *cfg)
@@ -1163,6 +1179,15 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
 	        cand->addr.addr.sa_family != pj_AF_INET())
 	    {
 	    	continue;
+	    }
+
+	    /**
+	     * Skip if we are trying to use a DEPRECATED ipv6 address
+	     */
+	    if (cand->addr.addr.sa_family == pj_AF_INET6()) {
+	        if (is_ipv6_deprecated(&cand->addr)) {
+	            continue;
+	        }
 	    }
 
 	    /* Add the candidate */
