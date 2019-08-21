@@ -60,6 +60,15 @@ typedef struct incoming_sock {
   int                 addr_len;
 } incoming_sock;
 
+typedef struct rx_buf {
+  pj_activesock_t    *asock;
+  pj_uint8_t         rx_buffer[MAX_RTP_SIZE];
+  pj_uint16_t        rx_buffer_size;
+  pj_uint16_t        rx_wanted_size;
+  struct rx_buf*     next;
+  struct rx_buf*     prev;
+} rx_buf;
+
 typedef struct pj_stun_sock {
   char *obj_name;          /* Log identification         */
   pj_pool_t *pool;         /* Pool                       */
@@ -85,9 +94,7 @@ typedef struct pj_stun_sock {
   outgoing_sock    outgoing_socks[PJ_ICE_MAX_CHECKS];
   int              incoming_nb;
   incoming_sock    incoming_socks[PJ_ICE_MAX_CHECKS];
-  pj_uint8_t       rx_buffer[MAX_RTP_SIZE];
-  pj_uint16_t      rx_buffer_size;
-  pj_uint16_t      rx_wanted_size;
+  rx_buf*          rx_buffers;
 #endif
   pj_ioqueue_op_key_t send_key;     /* Default send key for app   */
   pj_ioqueue_op_key_t int_send_key; /* Send key for internal      */
@@ -547,47 +554,83 @@ on_stun_sock_ready(pj_activesock_t *asock, pj_status_t status)
 }
 
 pj_bool_t
-parse_rx_packet(pj_stun_sock *stun_sock, void *data, pj_size_t size,
+parse_rx_packet(pj_activesock_t *asock, void *data, pj_size_t size,
                 const pj_sockaddr_t *rx_addr, unsigned sock_addr_len) {
+
+    pj_stun_sock *stun_sock = (pj_stun_sock*) pj_activesock_get_user_data(asock);
+    if (!stun_sock)
+	    return PJ_FALSE;
+
+    pj_grp_lock_acquire(stun_sock->grp_lock);
     pj_uint16_t parsed = 0;
     pj_status_t result = PJ_TRUE;
     pj_status_t status;
 
+#if PJ_HAS_TCP
+    pj_uint8_t*       rx_buffer = NULL;
+    pj_uint16_t*      rx_buffer_size = NULL;
+    pj_uint16_t*      rx_wanted_size = NULL;
+
+
+    // Search current rx_buf
+    rx_buf* buf = NULL;
+    rx_buf* stun_sock_buf = stun_sock->rx_buffers;
+    while (stun_sock_buf) {
+      if (stun_sock_buf->asock == asock) {
+        buf = stun_sock_buf;
+        break;
+      }
+      stun_sock_buf = stun_sock_buf->next;
+    }
+    if (!buf) {
+      // Create rx_buf, this buf will be released when the pool is released
+      buf = (rx_buf*)pj_pool_calloc(stun_sock->pool, 1, sizeof(rx_buf));
+      if (!buf) {
+        PJ_LOG(5, (stun_sock->obj_name, "Cannot allocate memory for rx_buf"));
+        status = pj_grp_lock_release(stun_sock->grp_lock);
+        return PJ_FALSE;
+      }
+      buf->asock = asock;
+      buf->next = stun_sock->rx_buffers;
+      if (stun_sock->rx_buffers) stun_sock->rx_buffers->prev = buf;
+      stun_sock->rx_buffers = buf;
+    }
+#endif
+
     do {
         pj_uint16_t pkt_len = size - parsed;
         pj_uint8_t *current_packet = ((pj_uint8_t *)(data)) + parsed;
-        pj_grp_lock_acquire(stun_sock->grp_lock);
 
 #if PJ_HAS_TCP
         if (stun_sock->conn_type != PJ_STUN_TP_UDP) {
             /* RFC6544, the packet is wrapped into a packet following the RFC4571 */
             pj_bool_t store_remaining = PJ_TRUE;
-            if (stun_sock->rx_buffer_size != 0 || stun_sock->rx_wanted_size != 0) {
+            if (buf->rx_buffer_size != 0 || buf->rx_wanted_size != 0) {
                 // We currently have a packet to complete
-                if (stun_sock->rx_buffer_size == 1) {
+                if (buf->rx_buffer_size == 1) {
                     // We do not know the current size, parse it.
-                    pkt_len = (((pj_uint8_t *)stun_sock->rx_buffer)[0] << 8) +
+                    pkt_len = (((pj_uint8_t *)buf->rx_buffer)[0] << 8) +
                               ((pj_uint8_t *)current_packet)[0];
-                    stun_sock->rx_buffer_size = 0; // We have eaten the temp packet.
+                    buf->rx_buffer_size = 0; // We have eaten the temp packet.
                     current_packet = current_packet + 1;
                     parsed += 1;
                     if (pkt_len + parsed <= size) {
                       store_remaining = PJ_FALSE;
                       parsed += pkt_len;
                     } else {
-                      stun_sock->rx_wanted_size = pkt_len;
+                      buf->rx_wanted_size = pkt_len;
                     }
-                } else if (pkt_len + stun_sock->rx_buffer_size >= stun_sock->rx_wanted_size) {
+                } else if (pkt_len + buf->rx_buffer_size >= buf->rx_wanted_size) {
                     // We have enough data Build new packet to parse
                     store_remaining = PJ_FALSE;
-                    pj_uint16_t eaten_bytes = stun_sock->rx_wanted_size - stun_sock->rx_buffer_size;
-                    memcpy(stun_sock->rx_buffer + stun_sock->rx_buffer_size,
+                    pj_uint16_t eaten_bytes = buf->rx_wanted_size - buf->rx_buffer_size;
+                    memcpy(buf->rx_buffer + buf->rx_buffer_size,
                            current_packet, eaten_bytes);
-                    pkt_len = stun_sock->rx_wanted_size;
-                    current_packet = stun_sock->rx_buffer;
+                    pkt_len = buf->rx_wanted_size;
+                    current_packet = buf->rx_buffer;
                     parsed += eaten_bytes;
-                    stun_sock->rx_buffer_size = 0;
-                    stun_sock->rx_wanted_size = 0;
+                    buf->rx_buffer_size = 0;
+                    buf->rx_wanted_size = 0;
                 }
             } else if (pkt_len > 1) {
                 pkt_len = (((pj_uint8_t *)current_packet)[0] << 8) + ((pj_uint8_t *)current_packet)[1];
@@ -597,15 +640,14 @@ parse_rx_packet(pj_stun_sock *stun_sock, void *data, pj_size_t size,
                     store_remaining = PJ_FALSE;
                     parsed += pkt_len;
                 } else {
-                    stun_sock->rx_wanted_size = pkt_len;
+                    buf->rx_wanted_size = pkt_len;
                 }
             }
             if (store_remaining) {
                 pj_uint16_t stored_size = size - parsed;
-                memcpy(stun_sock->rx_buffer + stun_sock->rx_buffer_size,
+                memcpy(buf->rx_buffer + buf->rx_buffer_size,
                         current_packet, stored_size);
-                stun_sock->rx_buffer_size += stored_size;
-                status = pj_grp_lock_release(stun_sock->grp_lock);
+                buf->rx_buffer_size += stored_size;
                 result &= status != PJ_EGONE ? PJ_TRUE : PJ_FALSE;
                 break;
             }
@@ -651,7 +693,6 @@ parse_rx_packet(pj_stun_sock *stun_sock, void *data, pj_size_t size,
                                            pkt_len, PJ_STUN_IS_DATAGRAM, NULL,
                                            NULL, rx_addr, sock_addr_len);
 
-        status = pj_grp_lock_release(stun_sock->grp_lock);
         result &= status != PJ_EGONE ? PJ_TRUE : PJ_FALSE;
         continue;
 
@@ -659,14 +700,14 @@ parse_rx_packet(pj_stun_sock *stun_sock, void *data, pj_size_t size,
         if (stun_sock->cb.on_rx_data) {
             (*stun_sock->cb.on_rx_data)(stun_sock, current_packet,
                                         (unsigned)pkt_len, rx_addr, sock_addr_len);
-            status = pj_grp_lock_release(stun_sock->grp_lock);
             result &= status != PJ_EGONE ? PJ_TRUE : PJ_FALSE;
             continue;
         }
 
-        status = pj_grp_lock_release(stun_sock->grp_lock);
         result &= status != PJ_EGONE ? PJ_TRUE : PJ_FALSE;
     } while (parsed < size && result);
+
+    status = pj_grp_lock_release(stun_sock->grp_lock);
     return result;
 }
 
@@ -707,10 +748,14 @@ pj_bool_t on_data_read(pj_activesock_t *asock, void *data, pj_size_t size,
     }
     if (rx_addr == NULL && stun_sock->incoming_nb != -1) {
         // It's an incoming message
-        rx_addr = &stun_sock->incoming_socks[stun_sock->incoming_nb].addr;
-        sock_addr_len = stun_sock->incoming_socks[stun_sock->incoming_nb].addr_len;
+        for (int i = 0; i <= stun_sock->incoming_nb; ++i) {
+            if (stun_sock->incoming_socks[i].sock == asock) {
+                rx_addr = &stun_sock->incoming_socks[i].addr;
+                sock_addr_len = stun_sock->incoming_socks[i].addr_len;
+            }
+        }
     }
-    return parse_rx_packet(stun_sock, data, size, rx_addr, sock_addr_len);
+    return parse_rx_packet(asock, data, size, rx_addr, sock_addr_len);
 #else
     pj_grp_lock_release(stun_sock->grp_lock);
     return PJ_FALSE;
@@ -1400,7 +1445,7 @@ pj_status_t sess_on_send_msg(pj_stun_session *sess,
 
     size = pkt_size;
     if (stun_sock->conn_type == PJ_STUN_TP_UDP) {
-        return pj_activesock_sendto(stun_sock->main_sock,
+        pj_status_t status = pj_activesock_sendto(stun_sock->main_sock,
                                     &stun_sock->int_send_key,
                                     pkt, &size, 0, dst_addr, addr_len);
     }
@@ -1412,8 +1457,9 @@ pj_status_t sess_on_send_msg(pj_stun_session *sess,
                                             &stun_sock->int_send_key, pkt, &size, 0);
             }
         }
-        return pj_activesock_send(stun_sock->main_sock, &stun_sock->int_send_key,
+        pj_status_t status = pj_activesock_send(stun_sock->main_sock, &stun_sock->int_send_key,
                         pkt, &size, 0);
+        return status;
     }
 #else
     return PJ_EINVAL;
@@ -1568,7 +1614,7 @@ pj_bool_t on_data_recvfrom(pj_activesock_t *asock,
 	return PJ_TRUE;
     }
 
-    return parse_rx_packet(stun_sock, data, size, src_addr, addr_len);
+    return parse_rx_packet(asock, data, size, src_addr, addr_len);
 }
 
 /* Callback from active socket about send status */
