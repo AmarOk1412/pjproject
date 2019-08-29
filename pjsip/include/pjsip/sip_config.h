@@ -359,7 +359,7 @@ PJ_INLINE(pjsip_cfg_t*) pjsip_cfg(void)
  * containing presence information can be quite large (>1500).
  */
 #ifndef PJSIP_MAX_PKT_LEN
-#   define PJSIP_MAX_PKT_LEN		4000
+#   define PJSIP_MAX_PKT_LEN		8000
 #endif
 
 
@@ -658,7 +658,7 @@ PJ_INLINE(pjsip_cfg_t*) pjsip_cfg(void)
  * Default: 600
  */
 #ifndef PJSIP_TRANSPORT_SERVER_IDLE_TIME
-#   define PJSIP_TRANSPORT_SERVER_IDLE_TIME	600
+#   define PJSIP_TRANSPORT_SERVER_IDLE_TIME	10
 #endif
 
 
