@@ -393,6 +393,7 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
     pj_bzero(&turn_sock_cb, sizeof(turn_sock_cb));
     turn_sock_cb.on_rx_data = &turn_on_rx_data;
     turn_sock_cb.on_state = &turn_on_state;
+    turn_sock_cb.on_data_sent = &turn_on_data_sent;
 
     /* Override with component specific QoS settings, if any */
     if (ice_st->cfg.comp[comp_idx].qos_type)
@@ -1675,9 +1676,9 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
         comp->turn[tp_idx].log_off = PJ_TRUE;
       }
 
-      status = pj_turn_sock_sendto(comp->turn[tp_idx].sock, final_pkt,
-                              final_len, dst_addr, dst_addr_len);
-	  ice_st->is_pending = ((status == PJ_EPENDING) && ice_st);
+      status = pj_turn_sock_sendto2(comp->turn[tp_idx].sock, final_pkt,
+                              final_len, dst_addr, dst_addr_len, size);
+      ice_st->is_pending = ((status == PJ_EPENDING || *size != data_len) && ice_st);
     } else {
 		const pj_sockaddr_t *dest_addr;
 		unsigned dest_addr_len;
@@ -1881,9 +1882,10 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
 
 	if (tp_typ == TP_TURN) {
 		if (comp->turn[tp_idx].sock) {
-			status = pj_turn_sock_sendto(comp->turn[tp_idx].sock,
-						final_pkt, final_len, dst_addr, dst_addr_len);
-			ice_st->is_pending = status == PJ_EPENDING;
+			status = pj_turn_sock_sendto2(comp->turn[tp_idx].sock,
+						final_pkt, final_len, dst_addr, dst_addr_len, &sent_size);
+			ice_st->is_pending = (status == PJ_EPENDING || (unsigned)sent_size != final_len);
+
 		} else {
 			status = PJ_EINVALIDOP;
 		}
