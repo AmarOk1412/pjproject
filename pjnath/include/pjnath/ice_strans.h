@@ -161,6 +161,19 @@ typedef struct pj_ice_strans_cb
 			  unsigned src_addr_len);
 
     /**
+     * This callback is optional and will be called to notify the status of
+     * both sync&async send operations.
+     *
+     * @param ice_st	    The ICE stream transport.
+     * @param sent	    If value is positive non-zero it indicates the
+     *			    number of data sent. When the value is negative,
+     *			    it contains the error code which can be retrieved
+     *			    by negating the value (i.e. status=-sent).
+     */
+    void    (*on_data_sent)(pj_ice_strans *sock,
+			    pj_ssize_t sent);
+
+    /**
      * Callback to report status of various ICE operations.
      * 
      * @param ice_st	    The ICE stream transport.
@@ -170,17 +183,6 @@ typedef struct pj_ice_strans_cb
     void    (*on_ice_complete)(pj_ice_strans *ice_st, 
 			       pj_ice_strans_op op,
 			       pj_status_t status);
-
-    /**
-     * This callback will be called when the ICE transport has
-     * sent data asynchronously.
-     *
-     * @param ice_st	    The ICE stream transport.
-     * @param comp_id	    The component ID.
-     * @param size	        Size of the packet.
-     */
-    void (*on_data_sent)(pj_ice_strans *ice_st, unsigned comp_id,
-                         pj_ssize_t size);
 
 } pj_ice_strans_cb;
 
@@ -447,6 +449,21 @@ typedef struct pj_ice_strans_cfg
      * TURN transport settings.
      */
     pj_ice_strans_turn_cfg turn_tp[PJ_ICE_MAX_TURN];
+
+    /**
+     * Number of send buffers used for pj_ice_strans_sendto(). If the send
+     * buffers are full, pj_ice_strans_sendto() will return PJ_EBUSY.
+     *
+     * Default: 4
+     */
+    unsigned 		 num_send_buf;
+
+    /**
+     * Buffer size used for pj_ice_strans_sendto().
+     *
+     * Default: 0 (size determined by the size of the first packet sent).
+     */
+    unsigned 		 send_buf_size;
 
     /**
      * Component specific settings, which will override the settings in
@@ -948,6 +965,10 @@ PJ_DECL(pj_status_t) pj_ice_strans_stop_ice(pj_ice_strans *ice_st);
  * successfully, this function will send the data to the nominated remote 
  * address, as negotiated by ICE.
  *
+ * If \on_data_sent() callback is implemented and the return value of
+ * this function is PJ_SUCCESS, application will be notified of the status
+ * of the send operation via the callback.
+ *
  * @param ice_st	The ICE stream transport.
  * @param comp_id	Component ID.
  * @param data		The data or packet to be sent.
@@ -955,7 +976,9 @@ PJ_DECL(pj_status_t) pj_ice_strans_stop_ice(pj_ice_strans *ice_st);
  * @param dst_addr	The destination address.
  * @param dst_addr_len	Length of destination address.
  *
- * @return		PJ_SUCCESS if data is sent successfully.
+ * @return		PJ_SUCCESS if data has been sent, or will be sent
+ *			later. To check the status of the send operation
+ *			itself, app can use on_data_sent() callback.
  */
 PJ_DECL(pj_status_t) pj_ice_strans_sendto(pj_ice_strans *ice_st,
 					  unsigned comp_id,

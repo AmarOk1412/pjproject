@@ -144,10 +144,14 @@ static void turn_on_rx_data(pj_turn_sock *turn_sock,
 			    unsigned pkt_len,
 			    const pj_sockaddr_t *peer_addr,
 			    unsigned addr_len);
+static pj_bool_t turn_on_data_sent(pj_turn_sock *turn_sock,
+				   pj_ssize_t sent);
 static void turn_on_state(pj_turn_sock *turn_sock, pj_turn_state_t old_state,
 			  pj_turn_state_t new_state);
 
 /* Forward decls */
+static pj_bool_t on_data_sent(pj_ice_strans *ice_st, pj_ssize_t sent,
+			      pj_bool_t call_cb);
 static void ice_st_on_destroy(void *obj);
 static void destroy_ice_st(pj_ice_strans *ice_st);
 #define ice_st_perror(ice_st,msg,rc) pjnath_perror(ice_st->obj_name,msg,rc)
@@ -193,12 +197,23 @@ typedef struct pj_ice_strans_comp
 } pj_ice_strans_comp;
 
 
+/* Pending send buffer */
+typedef struct pending_send
+{
+    void       	       *buffer;
+    unsigned 		comp_id;
+    pj_size_t 		data_len;
+    pj_sockaddr       	dst_addr;
+    int 		dst_addr_len;
+} pending_send;
+
 /**
  * This structure represents the ICE stream transport.
  */
 struct pj_ice_strans
 {
     char		    *obj_name;	/**< Log ID.			*/
+    pj_pool_factory	    *pf;	/**< Pool factory.		*/
     pj_pool_t		    *pool;	/**< Pool used by this object.	*/
     void		    *user_data;	/**< Application data.		*/
     pj_ice_strans_cfg	     cfg;	/**< Configuration.		*/
@@ -212,12 +227,18 @@ struct pj_ice_strans
     unsigned		     comp_cnt;	/**< Number of components.	*/
     pj_ice_strans_comp	   **comp;	/**< Components array.		*/
 
+    pj_pool_t		    *buf_pool;  /**< Pool for buffers.		*/
+    unsigned		     num_buf;	/**< Number of buffers.		*/
+    unsigned		     buf_idx;	/**< Index of buffer.		*/
+    unsigned		     empty_idx;	/**< Index of empty buffer.	*/
+    unsigned		     buf_size;  /**< Buffer size.		*/
+    pending_send	    *send_buf;	/**< Send buffers.		*/
+    pj_bool_t		     is_pending;/**< Any pending send?		*/
+
     pj_timer_entry	     ka_timer;	/**< STUN keep-alive timer.	*/
 
     pj_bool_t		     destroy_req;/**< Destroy has been called?	*/
     pj_bool_t		     cb_called;	/**< Init error callback called?*/
-
-	pj_bool_t			 is_pending;
 
 	pj_uint8_t			 rtp_pkt[MAX_RTP_SIZE];
 
@@ -265,6 +286,8 @@ PJ_DEF(void) pj_ice_strans_cfg_default(pj_ice_strans_cfg *cfg)
     pj_ice_strans_stun_cfg_default(&cfg->stun);
     pj_ice_strans_turn_cfg_default(&cfg->turn);
     pj_ice_sess_options_default(&cfg->opt);
+
+    cfg->num_send_buf = 4;
 }
 
 
@@ -392,6 +415,7 @@ static pj_status_t add_update_turn(pj_ice_strans *ice_st,
     /* Init TURN socket */
     pj_bzero(&turn_sock_cb, sizeof(turn_sock_cb));
     turn_sock_cb.on_rx_data = &turn_on_rx_data;
+    turn_sock_cb.on_data_sent = &turn_on_data_sent;
     turn_sock_cb.on_state = &turn_on_state;
     turn_sock_cb.on_data_sent = &turn_on_data_sent;
 
@@ -838,6 +862,35 @@ static pj_status_t create_comp(pj_ice_strans *ice_st, unsigned comp_id)
     return PJ_SUCCESS;
 }
 
+static pj_status_t alloc_send_buf(pj_ice_strans *ice_st, unsigned buf_size)
+{
+    if (buf_size > ice_st->buf_size) {
+        unsigned i;
+        
+        if (ice_st->is_pending) {
+            /* The current buffer is insufficient, but still currently used.*/
+            return PJ_EBUSY;
+        }
+
+    	pj_pool_safe_release(&ice_st->buf_pool);
+
+    	ice_st->buf_pool = pj_pool_create(ice_st->pf, "ice_buf",
+    			       (buf_size + sizeof(pending_send)) *
+    			       ice_st->num_buf, 512, NULL);
+	if (!ice_st->buf_pool)
+	    return PJ_ENOMEM;
+
+	ice_st->buf_size = buf_size;
+	ice_st->send_buf = pj_pool_calloc(ice_st->buf_pool, ice_st->num_buf,
+			       		  sizeof(pending_send));
+	for (i = 0; i < ice_st->num_buf; i++) {
+	    ice_st->send_buf[i].buffer = pj_pool_alloc(ice_st->buf_pool,
+	    					       buf_size);
+	}
+    }
+    
+    return PJ_SUCCESS;
+}
 
 /*
  * Create ICE stream transport
@@ -868,6 +921,7 @@ PJ_DEF(pj_status_t) pj_ice_strans_create( const char *name,
 			  PJNATH_POOL_INC_ICE_STRANS, NULL);
     ice_st = PJ_POOL_ZALLOC_T(pool, pj_ice_strans);
     ice_st->pool = pool;
+    ice_st->pf = cfg->stun_cfg.pf;
     ice_st->obj_name = pool->obj_name;
     ice_st->user_data = user_data;
 
@@ -888,6 +942,15 @@ PJ_DEF(pj_status_t) pj_ice_strans_create( const char *name,
       pj_pool_release(pool);
       pj_log_pop_indent();
       return status;
+    }
+
+    /* Allocate send buffer */
+    ice_st->num_buf = cfg->num_send_buf;
+    status = alloc_send_buf(ice_st, cfg->send_buf_size);
+    if (status != PJ_SUCCESS) {
+	destroy_ice_st(ice_st);
+	pj_log_pop_indent();
+	return status;
     }
 
     pj_grp_lock_add_ref(ice_st->grp_lock);
@@ -961,7 +1024,8 @@ static void ice_st_on_destroy(void *obj)
     PJ_LOG(4,(ice_st->obj_name, "ICE stream transport %p destroyed", obj));
 
     /* Done */
-    pj_pool_release(ice_st->pool);
+    pj_pool_safe_release(&ice_st->buf_pool);
+    pj_pool_safe_release(&ice_st->pool);
 }
 
 /* Destroy ICE */
@@ -1557,43 +1621,30 @@ PJ_DEF(pj_status_t) pj_ice_strans_stop_ice(pj_ice_strans *ice_st)
 /*
  * Application wants to send outgoing packet.
  */
-PJ_DEF(pj_status_t) pj_ice_strans_sendto( pj_ice_strans *ice_st,
-					  unsigned comp_id,
-					  const void *data,
-					  pj_size_t data_len,
-					  const pj_sockaddr_t *dst_addr,
-					  int dst_addr_len)
+static pj_status_t send_data(pj_ice_strans *ice_st,
+			     unsigned comp_id,
+		      	     const void *data,
+		      	     pj_size_t data_len,
+			     const pj_sockaddr_t *dst_addr,
+			     int dst_addr_len,
+			     pj_bool_t call_cb)
 {
-	pj_ssize_t size;
-	pj_status_t res = pj_ice_strans_sendto2(ice_st, comp_id, data, data_len, dst_addr, dst_addr_len, &size);
-	return (res==PJ_SUCCESS||res==PJ_EPENDING) ?
-		PJ_SUCCESS : res;
-}
-
-/*
- * Application wants to send outgoing packet.
- */
-PJ_DEF(pj_status_t)
-pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
-                     pj_size_t data_len, const pj_sockaddr_t *dst_addr,
-                     int dst_addr_len, pj_ssize_t* size) {
   pj_ice_strans_comp *comp;
   pj_ice_sess_cand *def_cand;
   pj_status_t status;
+  pj_ssize_t size;
 
   PJ_ASSERT_RETURN(ice_st && comp_id && comp_id <= ice_st->comp_cnt &&
                        dst_addr && dst_addr_len,
                    PJ_EINVAL);
 
-  if (ice_st->is_pending) {
-    return PJ_EBUSY;
-  }
-
   comp = ice_st->comp[comp_id - 1];
 
   /* Check that default candidate for the component exists */
-  if (comp->default_cand >= comp->cand_cnt)
-    return PJ_EINVALIDOP;
+  if (comp->default_cand >= comp->cand_cnt) {
+	status = PJ_EINVALIDOP;
+	goto on_return;
+  }
 
   /* Protect with group lock, since this may cause race condition with
    * pj_ice_strans_stop_ice().
@@ -1612,11 +1663,7 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
 
     pj_grp_lock_release(ice_st->grp_lock);
 
-    if (ice_st->is_pending) {
-      return PJ_EPENDING;
-    }
-
-    return status;
+    goto on_return;
   }
 
   pj_grp_lock_release(ice_st->grp_lock);
@@ -1663,7 +1710,8 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
       /* https://trac.pjsip.org/repos/ticket/1316 */
       if (comp->turn[tp_idx].sock == NULL) {
         /* TURN socket error */
-        return PJ_EINVALIDOP;
+		status = PJ_EINVALIDOP;
+		goto on_return;
       }
 
       if (!comp->turn[tp_idx].log_off) {
@@ -1677,8 +1725,8 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
       }
 
       status = pj_turn_sock_sendto2(comp->turn[tp_idx].sock, final_pkt,
-                              final_len, dst_addr, dst_addr_len, size);
-      ice_st->is_pending = ((status == PJ_EPENDING || *size != data_len) && ice_st);
+                              final_len, dst_addr, dst_addr_len, &size);
+      goto on_return;
     } else {
 		const pj_sockaddr_t *dest_addr;
 		unsigned dest_addr_len;
@@ -1689,7 +1737,7 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
 				status = pj_sockaddr_synthesize(pj_AF_INET6(), &comp->synth_addr,
 												dst_addr);
 				if (status != PJ_SUCCESS)
-					return status;
+					goto on_return;
 
 				pj_sockaddr_cp(&comp->dst_addr, dst_addr);
 				comp->synth_addr_len = pj_sockaddr_get_len(&comp->synth_addr);
@@ -1702,16 +1750,83 @@ pj_ice_strans_sendto2(pj_ice_strans *ice_st, unsigned comp_id, const void *data,
 		}
 
 		status = pj_stun_sock_sendto(comp->stun[tp_idx].sock, NULL, final_pkt,
-								final_len, 0, dest_addr, dest_addr_len, size);
+								final_len, 0, dest_addr, dest_addr_len, &size);
 		
-		if (add_header) *size -= sizeof(pj_uint16_t); // Do not count the header
-		ice_st->is_pending = ((status == PJ_EPENDING || *size != data_len) && ice_st);
+		if (add_header) size -= sizeof(pj_uint16_t); // Do not count the header
+		goto on_return;
     }
 
-	return status;
-
   } else
-    return PJ_EINVALIDOP;
+	status = PJ_EINVALIDOP;
+
+on_return:
+    if (status == PJ_EPENDING)
+    	return PJ_SUCCESS;
+
+    /* We call the callback in the following cases:
+     * - If this function is called from pj_ice_strans_sendto(),
+     *   only if status is PJ_SUCCESS.
+     * - If this function is called on a queued buffer (i.e. from
+     *   on_data_sent()), on all cases.
+     */
+    on_data_sent(ice_st, (status == PJ_SUCCESS? data_len: -status),
+    		 (status == PJ_SUCCESS || call_cb));
+
+    return status;
+}
+
+/*
+ * Application wants to send outgoing packet.
+ */
+PJ_DEF(pj_status_t) pj_ice_strans_sendto( pj_ice_strans *ice_st,
+					  unsigned comp_id,
+					  const void *data,
+					  pj_size_t data_len,
+					  const pj_sockaddr_t *dst_addr,
+					  int dst_addr_len)
+{
+    unsigned idx;
+    pj_status_t status;
+
+    PJ_ASSERT_RETURN(ice_st && comp_id && comp_id <= ice_st->comp_cnt &&
+		     dst_addr && dst_addr_len, PJ_EINVAL);
+
+    pj_grp_lock_acquire(ice_st->grp_lock);
+
+    /* Allocate send buffer, if necessary. */
+    status = alloc_send_buf(ice_st, data_len);
+    if (status != PJ_SUCCESS) {
+        pj_grp_lock_release(ice_st->grp_lock);
+    	return status;
+    }
+    
+    if (ice_st->is_pending && ice_st->empty_idx == ice_st->buf_idx) {
+    	/* There's no more empty buffer. */
+    	pj_grp_lock_release(ice_st->grp_lock);
+    	return PJ_EBUSY;
+    }
+
+    idx = ice_st->empty_idx;
+    ice_st->empty_idx = (ice_st->empty_idx + 1) % ice_st->num_buf;
+    ice_st->send_buf[idx].comp_id = comp_id;
+    ice_st->send_buf[idx].data_len = data_len;
+    pj_assert(ice_st->buf_size >= data_len);
+    pj_memcpy(ice_st->send_buf[idx].buffer, data, data_len);
+    pj_sockaddr_cp(&ice_st->send_buf[idx].dst_addr, dst_addr);
+    ice_st->send_buf[idx].dst_addr_len = dst_addr_len;
+    
+    if (ice_st->is_pending) {
+        /* We'll continue later since there's still a pending send. */
+    	pj_grp_lock_release(ice_st->grp_lock);
+    	return PJ_SUCCESS;
+    }
+    
+    ice_st->is_pending = PJ_TRUE;
+    ice_st->buf_idx = idx;
+    pj_grp_lock_release(ice_st->grp_lock);
+
+    return send_data(ice_st, comp_id, ice_st->send_buf[idx].buffer,
+    	      	     data_len, dst_addr, dst_addr_len, PJ_TRUE);
 }
 
 /*
@@ -1839,10 +1954,6 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
 
     PJ_ASSERT_RETURN(comp_id && comp_id <= ice_st->comp_cnt, PJ_EINVAL);
 
-	if (ice_st->is_pending) {
-		return PJ_EBUSY;
-	}
-
     comp = ice_st->comp[comp_id-1];
 
     TRACE_PKT((comp->ice_st->obj_name,
@@ -1924,7 +2035,7 @@ static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
         status = PJ_EINVALIDOP;
     }
 
-    return (status==PJ_SUCCESS||status==PJ_EPENDING) ? PJ_SUCCESS : status;
+    return status;
 }
 
 /*
@@ -2167,6 +2278,34 @@ static pj_status_t ice_close_tcp_connection(pj_ice_sess *ice,
 }
 #endif
 
+/* Notifification when asynchronous send operation via STUN/TURN
+ * has completed.
+ */
+static pj_bool_t on_data_sent(pj_ice_strans *ice_st, pj_ssize_t sent,
+			      pj_bool_t call_cb)
+{
+    if (call_cb && ice_st->cb.on_data_sent) {
+	(*ice_st->cb.on_data_sent)(ice_st, sent);
+    }
+
+    pj_grp_lock_acquire(ice_st->grp_lock);
+    
+    ice_st->buf_idx = (ice_st->buf_idx + 1) % ice_st->num_buf;
+    if (ice_st->buf_idx != ice_st->empty_idx) {
+	/* There's still more pending send. Send it one by one. */
+        pending_send *ps = &ice_st->send_buf[ice_st->buf_idx];
+
+	pj_grp_lock_release(ice_st->grp_lock);
+    	send_data(ice_st, ps->comp_id, ps->buffer, ps->data_len,
+    	    	  &ps->dst_addr, ps->dst_addr_len, PJ_TRUE);
+    } else {
+    	ice_st->is_pending = PJ_FALSE;
+    	pj_grp_lock_release(ice_st->grp_lock);
+    }
+
+    return PJ_TRUE;
+}
+
 /* Notification when incoming packet has been received from
  * the STUN socket.
  */
@@ -2224,34 +2363,21 @@ static pj_bool_t stun_on_data_sent(pj_stun_sock *stun_sock,
 				   pj_ssize_t sent)
 {
     sock_user_data *data;
-    pj_ice_strans_comp *comp;
-    pj_ice_strans *ice_st;
 
-    data = (sock_user_data*) pj_stun_sock_get_user_data(stun_sock);
-    comp = data->comp;
-    ice_st = comp->ice_st;
-    ice_st->is_pending = PJ_FALSE;
-    if (ice_st->cb.on_data_sent) {
-      (*ice_st->cb.on_data_sent)(ice_st, comp->comp_id, sent);
-    }
-    return PJ_TRUE;
+    PJ_UNUSED_ARG(send_key);
+
+    data = (sock_user_data *)pj_stun_sock_get_user_data(stun_sock);
+
+    return on_data_sent(data->comp->ice_st, sent, PJ_TRUE);
 }
 
 static pj_bool_t turn_on_data_sent(pj_turn_sock *turn_sock, pj_ssize_t sent)
 {
     sock_user_data *data;
-    pj_ice_strans_comp *comp;
-    pj_ice_strans *ice_st;
 
-    data = (sock_user_data*) pj_turn_sock_get_user_data(turn_sock);
-    comp = data->comp;
-    ice_st = comp->ice_st;
-    ice_st->is_pending = PJ_FALSE;
+    data = (sock_user_data *)pj_turn_sock_get_user_data(turn_sock);
 
-    if (ice_st->cb.on_data_sent) {
-      (*ice_st->cb.on_data_sent)(ice_st, comp->comp_id, sent);
-    }
-    return PJ_TRUE;
+    return on_data_sent(data->comp->ice_st, sent, PJ_TRUE);
 }
 
 /* Notification when the status of the STUN transport has changed. */
@@ -2582,7 +2708,6 @@ static void turn_on_rx_data(pj_turn_sock *turn_sock,
 
     pj_grp_lock_dec_ref(comp->ice_st->grp_lock);
 }
-
 
 /* Callback when TURN client state has changed */
 static void turn_on_state(pj_turn_sock *turn_sock, pj_turn_state_t old_state,

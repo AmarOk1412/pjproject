@@ -791,8 +791,10 @@ PJ_DECL(pj_status_t) pj_turn_session_set_perm(pj_turn_session *sess,
  *			of the data, and not the TURN server address).
  * @param addr_len	Length of the address.
  *
- * @return		PJ_SUCCESS if the operation has been successful,
- *			or the appropriate error code on failure.
+ * @return		If the callback \a on_send_pkt() is called, this
+ *			will contain the return value of the callback.
+ *			Otherwise, it will indicate failure with
+ * 			the appropriate error code.
  */
 PJ_DECL(pj_status_t) pj_turn_session_sendto(pj_turn_session *sess,
 					    const pj_uint8_t *pkt,

@@ -291,6 +291,8 @@ PJ_DEF(pj_status_t) pjmedia_ice_create3(pjmedia_endpt *endpt,
 	ice_st_cfg.comp[COMP_RTP-1].so_sndbuf_size = 
 			    PJMEDIA_TRANSPORT_SO_SNDBUF_SIZE;
     }
+    if (ice_st_cfg.send_buf_size == 0)
+    	ice_st_cfg.send_buf_size = PJMEDIA_MAX_MTU;
 
     /* Create ICE */
     status = pj_ice_strans_create(name, &ice_st_cfg, comp_cnt, tp_ice, 
