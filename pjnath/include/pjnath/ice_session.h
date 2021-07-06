@@ -648,6 +648,11 @@ typedef struct pj_ice_sess_cb
                                         pj_ice_sess_checklist *clist,
                                         unsigned check_id);
 
+    /**
+     * If an internal TCP keep alive, this mount the error to the application
+     */
+    void	(*on_ice_destroy)(pj_ice_sess *ice);
+
 } pj_ice_sess_cb;
 
 

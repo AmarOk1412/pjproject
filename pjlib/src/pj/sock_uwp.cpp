@@ -69,6 +69,24 @@ const pj_uint16_t PJ_SOL_IP	= IPPROTO_IP;
 const pj_uint16_t PJ_SOL_IP	= 0;
 #endif /* SOL_IP */
 
+#if defined(TCP_KEEPIDLE)
+const pj_uint16_t PJ_TCP_KEEPIDLE = TCP_KEEPIDLE;
+#else
+const pj_uint16_t PJ_TCP_KEEPIDLE = 4;
+#endif
+
+#if defined(TCP_KEEPINTVL)
+const pj_uint16_t PJ_TCP_KEEPINTVL = TCP_KEEPINTVL;
+#else
+const pj_uint16_t PJ_TCP_KEEPINTVL = 5;
+#endif
+
+#if defined(TCP_KEEPCNT)
+const pj_uint16_t PJ_TCP_KEEPCNT = TCP_KEEPCNT;
+#else
+const pj_uint16_t PJ_TCP_KEEPCNT = 6;
+#endif
+
 #if defined(SOL_TCP)
 const pj_uint16_t PJ_SOL_TCP	= SOL_TCP;
 #elif defined(IPPROTO_TCP)
@@ -78,6 +96,12 @@ const pj_uint16_t PJ_SOL_TCP	= IPPROTO_TCP;
 #else
 const pj_uint16_t PJ_SOL_TCP	= 6;
 #endif /* SOL_TCP */
+
+#if defined(SOL_KEEPALIVE)
+const pj_uint16_t PJ_SOL_KEEPALIVE = SOL_KEEPALIVE;
+#else
+const pj_uint16_t PJ_SOL_KEEPALIVE = 9;
+#endif
 
 #ifdef SOL_UDP
 const pj_uint16_t PJ_SOL_UDP	= SOL_UDP;

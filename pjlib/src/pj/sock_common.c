@@ -1346,9 +1346,29 @@ PJ_DEF(pj_uint16_t) pj_SO_SNDBUF(void)
     return PJ_SO_SNDBUF;
 }
 
+PJ_DEF(pj_uint16_t) pj_SO_KEEPALIVE(void)
+{
+    return PJ_SO_KEEPALIVE;
+}
+
 PJ_DEF(pj_uint16_t) pj_TCP_NODELAY(void)
 {
     return PJ_TCP_NODELAY;
+}
+
+PJ_DEF(pj_uint16_t) pj_TCP_KEEPIDLE(void)
+{
+    return PJ_TCP_KEEPIDLE
+}
+
+PJ_DEF(pj_uint16_t) pj_TCP_KEEPINTVL(void)
+{
+    return PJ_TCP_KEEPINTVL
+}
+
+PJ_DEF(pj_uint16_t) pj_TCP_KEEPCNT(void)
+{
+    return PJ_TCP_KEEPCNT
 }
 
 PJ_DEF(pj_uint16_t) pj_SO_REUSEADDR(void)

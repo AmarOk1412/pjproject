@@ -219,6 +219,13 @@ typedef struct pj_ice_strans_cb
 				const pj_ice_sess_cand *cand,
 				pj_bool_t end_of_cand);
 
+    /**
+     * This callback is called if an internal operation fails
+     *
+     * @param ice_st	    The ICE stream transport.
+     */
+    void (*on_destroy)(pj_ice_strans *ice_st);
+
 } pj_ice_strans_cb;
 
 

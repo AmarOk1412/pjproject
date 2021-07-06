@@ -99,6 +99,7 @@ static pj_uint16_t GETVAL16H(const pj_uint8_t *buf1, const pj_uint8_t *buf2)
 
 /* ICE callbacks */
 static void	   on_valid_pair(pj_ice_sess *ice);
+static void	   on_ice_destroy(pj_ice_sess *ice);
 static void	   on_ice_complete(pj_ice_sess *ice, pj_status_t status);
 static pj_status_t ice_tx_pkt(pj_ice_sess *ice,
 			      unsigned comp_id,
@@ -1383,6 +1384,7 @@ PJ_DEF(pj_status_t) pj_ice_strans_init_ice(pj_ice_strans *ice_st,
     ice_cb.wait_tcp_connection      = &ice_wait_tcp_connection;
     ice_cb.reconnect_tcp_connection = &ice_reconnect_tcp_connection;
     ice_cb.close_tcp_connection     = &ice_close_tcp_connection;
+    ice_cb.on_ice_destroy           = &on_ice_destroy;
 #endif
 
     /* Create! */
@@ -2188,6 +2190,15 @@ static void on_valid_pair(pj_ice_sess *ice)
     }
 
     pj_grp_lock_dec_ref(ice_st->grp_lock);
+}
+
+static void on_ice_destroy(pj_ice_sess *ice)
+{
+    pj_ice_strans *ice_st = (pj_ice_strans*)ice->user_data;
+
+    if (ice_st->cb.on_destroy) {
+	(*ice_st->cb.on_destroy)(ice_st);
+    }
 }
 
 /*

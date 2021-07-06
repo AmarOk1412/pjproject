@@ -1533,6 +1533,12 @@ static void ice_keep_alive(pj_ice_sess *ice, pj_bool_t send_now)
 					  PJ_FALSE, PJ_FALSE, 
 					  &the_check->rcand->addr, 
 					  addr_len, tdata);
+	if (status != PJ_SUCCESS && status != PJ_EPENDING && status != PJ_EBUSY) {
+	    if (ice->cb.on_ice_destroy) {
+		ice->cb.on_ice_destroy(ice);
+	    }
+	    return;
+	}
 
 	/* Restore FINGERPRINT usage */
 	pj_stun_session_use_fingerprint(comp->stun_sess, saved);

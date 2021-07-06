@@ -314,6 +314,11 @@ extern const pj_uint16_t PJ_SO_REUSEADDR;
 /** Do not generate SIGPIPE. @see pj_SO_NOSIGPIPE */
 extern const pj_uint16_t PJ_SO_NOSIGPIPE;
 
+extern const pj_uint16_t PJ_SO_KEEPALIVE;
+extern const pj_uint16_t PJ_TCP_KEEPIDLE;
+extern const pj_uint16_t PJ_TCP_KEEPINTVL;
+extern const pj_uint16_t PJ_TCP_KEEPCNT;
+
 /** Set the protocol-defined priority for all packets to be sent on socket.
  */
 extern const pj_uint16_t PJ_SO_PRIORITY;
@@ -344,8 +349,20 @@ extern const pj_uint16_t PJ_IP_DROP_MEMBERSHIP;
     /** Get #PJ_SO_SNDBUF constant */
     PJ_DECL(pj_uint16_t) pj_SO_SNDBUF(void);
 
+    /** Get #PJ_SO_KEEPALIVE constant */
+#   define pj_SO_KEEPALIVE() PJ_SO_KEEPALIVE(void);
+
     /** Get #PJ_TCP_NODELAY constant */
     PJ_DECL(pj_uint16_t) pj_TCP_NODELAY(void);
+
+    /** Get #PJ_TCP_KEEPIDLE constant */
+#   define pj_TCP_KEEPIDLE() PJ_TCP_KEEPIDLE(void);
+
+    /** Get #PJ_TCP_KEEPINTVL constant */
+#   define pj_TCP_KEEPINTVL() PJ_TCP_KEEPINTVL(void);
+
+    /** Get #PJ_TCP_KEEPCNT constant */
+#   define pj_TCP_KEEPCNT() PJ_TCP_KEEPCNT(void);
 
     /** Get #PJ_SO_REUSEADDR constant */
     PJ_DECL(pj_uint16_t) pj_SO_REUSEADDR(void);
@@ -380,8 +397,20 @@ extern const pj_uint16_t PJ_IP_DROP_MEMBERSHIP;
     /** Get #PJ_SO_SNDBUF constant */
 #   define pj_SO_SNDBUF()   PJ_SO_SNDBUF
 
+    /** Get #PJ_SO_KEEPALIVE constant */
+#   define pj_SO_KEEPALIVE() PJ_SO_KEEPALIVE
+
     /** Get #PJ_TCP_NODELAY constant */
 #   define pj_TCP_NODELAY() PJ_TCP_NODELAY
+
+    /** Get #PJ_TCP_KEEPIDLE constant */
+#   define pj_TCP_KEEPIDLE() PJ_TCP_KEEPIDLE
+
+    /** Get #PJ_TCP_KEEPINTVL constant */
+#   define pj_TCP_KEEPINTVL() PJ_TCP_KEEPINTVL
+
+    /** Get #PJ_TCP_KEEPCNT constant */
+#   define pj_TCP_KEEPCNT() PJ_TCP_KEEPCNT
 
     /** Get #PJ_SO_REUSEADDR constant */
 #   define pj_SO_REUSEADDR() PJ_SO_REUSEADDR

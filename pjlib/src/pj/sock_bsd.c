@@ -28,6 +28,15 @@
 
 #define THIS_FILE	"sock_bsd.c"
 
+#if !defined(PJ_WIN32) && !defined(PJ_WIN64)
+# if !defined(SOL_TCP) && defined(IPPROTO_TCP)
+#  define SOL_TCP IPPROTO_TCP
+# endif
+# if !defined(TCP_KEEPIDLE) && defined(TCP_KEEPALIVE)
+#  define TCP_KEEPIDLE TCP_KEEPALIVE
+# endif
+#endif
+
 /*
  * Address families conversion.
  * The values here are indexed based on pj_addr_family.
@@ -144,7 +153,19 @@ const pj_uint16_t PJ_IPV6_TCLASS = 0xFFFF;
 const pj_uint16_t PJ_SO_TYPE    = SO_TYPE;
 const pj_uint16_t PJ_SO_RCVBUF  = SO_RCVBUF;
 const pj_uint16_t PJ_SO_SNDBUF  = SO_SNDBUF;
+const pj_uint16_t PJ_SO_KEEPALIVE = SO_KEEPALIVE;
 const pj_uint16_t PJ_TCP_NODELAY= TCP_NODELAY;
+#if !defined(PJ_WIN32) && !defined(PJ_WIN64)
+# ifdef TCP_KEEPIDLE
+const pj_uint16_t PJ_TCP_KEEPIDLE = TCP_KEEPIDLE;
+# endif
+# ifdef TCP_KEEPINTVL
+const pj_uint16_t PJ_TCP_KEEPINTVL = TCP_KEEPINTVL;
+# endif
+# ifdef TCP_KEEPCNT
+const pj_uint16_t PJ_TCP_KEEPCNT = TCP_KEEPCNT;
+# endif
+#endif
 const pj_uint16_t PJ_SO_REUSEADDR= SO_REUSEADDR;
 #ifdef SO_NOSIGPIPE
 const pj_uint16_t PJ_SO_NOSIGPIPE = SO_NOSIGPIPE;
@@ -517,6 +538,20 @@ PJ_DEF(pj_status_t) pj_sock_socket(int af,
 	if (rc==SOCKET_ERROR) {
 	    // Ignored..
 	}
+    } else if(type == pj_SOCK_STREAM()) {
+#ifndef SIO_KEEPALIVE_VALS
+# define SIO_KEEPALIVE_VALS _WSAIOW(IOC_VENDOR, 4)
+#endif
+	DWORD dwBytesReturned = 0;
+	struct tcp_keepalive {
+	    ULONG onoff;
+	    ULONG keepalivetime;
+	    ULONG keepaliveinterval;
+	} vals = { TRUE, 30000, 30000 };
+	WSAIoctl(*sock, SIO_KEEPALIVE_VALS,
+		 &vals, sizeof(vals),
+		 NULL, 0, &dwBytesReturned,
+		 NULL, NULL);
     }
 #endif
 
@@ -548,6 +583,16 @@ PJ_DEF(pj_status_t) pj_sock_socket(int af,
 	if (type == pj_SOCK_STREAM()) {
 	    pj_sock_setsockopt(*sock, pj_SOL_SOCKET(), pj_SO_NOSIGPIPE(),
 			       &val, sizeof(val));
+	    pj_sock_setsockopt(*sock, pj_SOL_SOCKET(), pj_SO_KEEPALIVE(),
+			       &val, sizeof(val));
+	    pj_sock_setsockopt(*sock, pj_SOL_TCP(), pj_TCP_KEEPCNT(),
+			       &val, sizeof(val));
+	    val = 30;
+	    pj_sock_setsockopt(*sock, pj_SOL_TCP(), pj_TCP_KEEPIDLE(),
+			       &val, sizeof(val));
+	    pj_sock_setsockopt(*sock, pj_SOL_TCP(), pj_TCP_KEEPINTVL(),
+			       &val, sizeof(val));
+	    val = 1;
 	}
 #if defined(PJ_SOCK_HAS_IPV6_V6ONLY) && PJ_SOCK_HAS_IPV6_V6ONLY != 0
 	if (af == PJ_AF_INET6) {
