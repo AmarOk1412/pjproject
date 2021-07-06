@@ -100,6 +100,10 @@ struct pj_turn_sock
     /* Data connection, when peer_conn_type==PJ_TURN_TP_TCP (RFC 6062) */
     unsigned		 data_conn_cnt;
     tcp_data_conn_t	 data_conn[PJ_TURN_MAX_TCP_CONN_CNT];
+
+    /* The following variables are used by the on_data_sent callback */
+    unsigned current_pkt_len;
+    unsigned current_body_len;
 };
 
 
@@ -116,6 +120,13 @@ static pj_status_t turn_on_stun_send_pkt(pj_turn_session *sess,
 				    	 unsigned pkt_len,
 				    	 const pj_sockaddr_t *dst_addr,
 				    	 unsigned dst_addr_len);
+static pj_status_t turn_on_send_pkt2(pj_turn_session *sess,
+                                     const pj_uint8_t *pkt,
+                                     unsigned pkt_len,
+                                     const pj_sockaddr_t *dst_addr,
+                                     unsigned dst_addr_len,
+                                     unsigned *sent,
+                                     unsigned body_len);
 static void turn_on_channel_bound(pj_turn_session *sess,
 				  const pj_sockaddr_t *peer_addr,
 				  unsigned addr_len,
@@ -345,6 +356,7 @@ PJ_DEF(pj_status_t) pj_turn_sock_create(pj_stun_config *cfg,
     pj_bzero(&sess_cb, sizeof(sess_cb));
     sess_cb.on_send_pkt = &turn_on_send_pkt;
     sess_cb.on_stun_send_pkt = &turn_on_stun_send_pkt;
+	sess_cb.on_send_pkt2 = &turn_on_send_pkt2;
     sess_cb.on_channel_bound = &turn_on_channel_bound;
     sess_cb.on_rx_data = &turn_on_rx_data;
     sess_cb.on_state = &turn_on_state;
@@ -651,6 +663,22 @@ PJ_DEF(pj_status_t) pj_turn_sock_sendto( pj_turn_sock *turn_sock,
     turn_sock->body_len = pkt_len;
     return pj_turn_session_sendto(turn_sock->sess, pkt, pkt_len, 
 				  addr, addr_len);
+}
+
+PJ_DEF(pj_status_t) pj_turn_sock_sendto2( pj_turn_sock *turn_sock,
+                                          const pj_uint8_t *pkt,
+                                          unsigned pkt_len,
+                                          const pj_sockaddr_t *addr,
+                                          unsigned addr_len,
+                                          unsigned *sent)
+{
+    PJ_ASSERT_RETURN(turn_sock && addr && addr_len, PJ_EINVAL);
+
+    if (turn_sock->sess == NULL)
+        return PJ_EINVALIDOP;
+
+    return pj_turn_session_sendto2(turn_sock->sess, pkt, pkt_len,
+                                   addr, addr_len, sent);
 }
 
 /*
@@ -1040,6 +1068,74 @@ static pj_status_t turn_on_send_pkt(pj_turn_session *sess,
     return send_pkt(sess, PJ_FALSE, pkt, pkt_len,
     		    dst_addr, dst_addr_len);
 }
+
+static pj_status_t turn_on_send_pkt2(pj_turn_session *sess,
+                                     const pj_uint8_t *pkt,
+                                     unsigned pkt_len,
+                                     const pj_sockaddr_t *dst_addr,
+                                     unsigned dst_addr_len,
+                                     unsigned *sent,
+                                     unsigned body_len)
+{
+    *sent = pkt_len;
+    pj_turn_sock *turn_sock = (pj_turn_sock*)pj_turn_session_get_user_data(sess);
+    pj_status_t status = PJ_SUCCESS;
+
+    pj_ssize_t len = pkt_len;
+    turn_sock->current_body_len = body_len;
+    turn_sock->current_pkt_len = pkt_len;
+
+    if (turn_sock == NULL || turn_sock->is_destroying) {
+        /* We've been destroyed */
+        // https://trac.pjsip.org/repos/ticket/1316
+        //pj_assert(!"We should shutdown gracefully");
+        return PJ_EINVALIDOP;
+    }
+
+    if (turn_sock->conn_type == PJ_TURN_TP_UDP) {
+        status = pj_activesock_sendto(turn_sock->active_sock,
+                                      &turn_sock->send_key, pkt, &len, 0,
+                                      dst_addr, dst_addr_len);
+    } else if (turn_sock->alloc_param.peer_conn_type == PJ_TURN_TP_TCP) {
+        pj_turn_session_info info;
+        pj_turn_session_get_info(turn_sock->sess, &info);
+        if (pj_sockaddr_cmp(&info.server, dst_addr) == 0) {
+            /* Destination address is TURN server */
+            status = pj_activesock_send(turn_sock->active_sock,
+                                        &turn_sock->send_key, pkt, &len, 0);
+        } else {
+            /* Destination address is peer, lookup data connection */
+            unsigned i;
+
+            status = PJ_ENOTFOUND;
+            for (i=0; i < PJ_TURN_MAX_TCP_CONN_CNT; ++i) {
+                tcp_data_conn_t *conn = &turn_sock->data_conn[i];
+                if (conn->state < DATACONN_STATE_CONN_BINDING)
+                    continue;
+                if (pj_sockaddr_cmp(&conn->peer_addr, dst_addr) == 0) {
+                    status = pj_activesock_send(conn->asock,
+                                                &conn->send_key,
+                                                pkt, &len, 0);
+                    break;
+                }
+            }
+        }
+    } else {
+        status = pj_activesock_send(turn_sock->active_sock,
+                                    &turn_sock->send_key, pkt, &len, 0);
+    }
+
+    if (status != PJ_SUCCESS && status != PJ_EPENDING) {
+        show_err(turn_sock, "socket send()", status);
+    }
+
+    // Remove header from sent size.
+    // The application only wants to know if the packet is actually sent.
+    unsigned header_len = pkt_len - body_len;
+    *sent = (len > header_len)? (len - header_len) : 0;
+
+    return status;
+ }
 
 static pj_status_t turn_on_stun_send_pkt(pj_turn_session *sess,
 				    	 const pj_uint8_t *pkt,

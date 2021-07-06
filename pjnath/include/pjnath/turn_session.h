@@ -256,6 +256,35 @@ typedef struct pj_turn_session_cb
 
     /**
      * This callback will be called by the TURN session whenever it
+     * needs to send outgoing message. Since the TURN session doesn't
+     * have a socket on its own, this callback must be implemented.
+     *
+     * The difference with on_send_pkt is that this function returns
+     * the size of the packet actually sent to predict when a busy will
+     * occurs. Indeed, activesock send the data asynchronously. When the
+     * data are actually sent, on_data_sent will be triggered.
+     *
+     * @param sess		The TURN session.
+     * @param pkt		The packet/data to be sent.
+     * @param pkt_len		Length of the packet/data.
+     * @param dst_addr		Destination address of the packet.
+     * @param addr_len		Length of the destination address.
+     * @param send_size		Length sent.
+     * @param original_size	The length of the packet without the HEADER
+     *
+     * @return			The callback should return the status of the
+     *				send operation.
+     */
+    pj_status_t (*on_send_pkt2)(pj_turn_session *sess,
+                                const pj_uint8_t *pkt,
+                                unsigned pkt_len,
+                                const pj_sockaddr_t *dst_addr,
+                                unsigned addr_len,
+                                unsigned* sent_size,
+                                unsigned original_size);
+
+    /**
+     * This callback will be called by the TURN session whenever it
      * needs to send outgoing STUN requests/messages for TURN signalling
      * purposes (data sending will not invoke this callback). If this
      * callback is not implemented, the callback \a on_send_pkt()
@@ -797,6 +826,42 @@ PJ_DECL(pj_status_t) pj_turn_session_sendto(pj_turn_session *sess,
 					    unsigned pkt_len,
 					    const pj_sockaddr_t *peer_addr,
 					    unsigned addr_len);
+
+/**
+ * Send a data to the specified peer address via the TURN relay. This
+ * function will encapsulate the data as STUN Send Indication or TURN
+ * ChannelData packet and send the message to the TURN server. The TURN
+ * server then will send the data to the peer.
+ *
+ * The allocation (pj_turn_session_alloc()) must have been successfully
+ * created before application can relay any data.
+ *
+ * Since TURN session is transport independent, this function will
+ * ultimately call \a on_send_pkt() callback to request the application
+ * to actually send the packet containing the data to the TURN server.
+ *
+ * The difference with pj_turn_session_sendto is that this function returns
+ * the size of the packet actually sent to predict when a busy will
+ * occurs. Indeed, activesock send the data asynchronously. When the
+ * data are actually sent, on_data_sent will be triggered.
+ *
+ * @param sess		The TURN client session.
+ * @param pkt		The data/packet to be sent to peer.
+ * @param pkt_len	Length of the data.
+ * @param peer_addr	The remote peer address (the ultimate destination
+ *			of the data, and not the TURN server address).
+ * @param addr_len	Length of the address.
+ * @param sent		The size of the packet actually sent
+ *
+ * @return		PJ_SUCCESS if the operation has been successful,
+ *			or the appropriate error code on failure.
+ */
+PJ_DECL(pj_status_t) pj_turn_session_sendto2(pj_turn_session *sess,
+                                             const pj_uint8_t *pkt,
+                                             unsigned pkt_len,
+                                             const pj_sockaddr_t *peer_addr,
+                                             unsigned addr_len,
+                                             unsigned *sent);
 
 /**
  * Optionally establish channel binding for the specified a peer address.

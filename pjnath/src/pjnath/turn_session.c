@@ -975,11 +975,23 @@ on_error:
 /**
  * Relay data to the specified peer through the session.
  */
+
 PJ_DEF(pj_status_t) pj_turn_session_sendto( pj_turn_session *sess,
 					    const pj_uint8_t *pkt,
 					    unsigned pkt_len,
 					    const pj_sockaddr_t *addr,
 					    unsigned addr_len)
+{
+	unsigned sent;
+	return pj_turn_session_sendto2(sess, pkt, pkt_len, addr, addr_len, &sent);
+}
+
+PJ_DEF(pj_status_t) pj_turn_session_sendto2(pj_turn_session *sess,
+                                            const pj_uint8_t *pkt,
+                                            unsigned pkt_len,
+                                            const pj_sockaddr_t *addr,
+                                            unsigned addr_len,
+                                            unsigned *sent)
 {
     struct ch_t *ch;
     struct perm_t *perm;
@@ -1016,7 +1028,7 @@ PJ_DEF(pj_status_t) pj_turn_session_sendto( pj_turn_session *sess,
 
     /* If peer connection is TCP (RFC 6062), send it directly */
     if (sess->alloc_param.peer_conn_type == PJ_TURN_TP_TCP) {
-	status = sess->cb.on_send_pkt(sess, pkt, pkt_len, addr, addr_len);
+	status = sess->cb.on_send_pkt2(sess, pkt, pkt_len, addr, addr_len, sent, pkt_len);
 	goto on_return;
     }
 
@@ -1044,9 +1056,10 @@ PJ_DEF(pj_status_t) pj_turn_session_sendto( pj_turn_session *sess,
 
 	pj_assert(sess->srv_addr != NULL);
 
-	status = sess->cb.on_send_pkt(sess, sess->tx_pkt, total_len,
+	status = sess->cb.on_send_pkt2(sess, sess->tx_pkt, total_len,
 				      sess->srv_addr,
-				      pj_sockaddr_get_len(sess->srv_addr));
+				      pj_sockaddr_get_len(sess->srv_addr),
+					  sent, pkt_len);
 
     } else {
 	/* Use Send Indication. */
@@ -1084,10 +1097,11 @@ PJ_DEF(pj_status_t) pj_turn_session_sendto( pj_turn_session *sess,
 	    goto on_return;
 
 	/* Send the Send Indication */
-	status = sess->cb.on_send_pkt(sess, sess->tx_pkt, 
+	status = sess->cb.on_send_pkt2(sess, sess->tx_pkt, 
 				      (unsigned)send_ind_len,
 				      sess->srv_addr,
-				      pj_sockaddr_get_len(sess->srv_addr));
+				      pj_sockaddr_get_len(sess->srv_addr),
+					  sent, pkt_len);
     }
 
 on_return:
