@@ -97,6 +97,12 @@ const pj_uint16_t PJ_SOL_TCP	= IPPROTO_TCP;
 const pj_uint16_t PJ_SOL_TCP	= 6;
 #endif /* SOL_TCP */
 
+#if defined(TCP_USER_TIMEOUT)
+const pj_uint16_t PJ_TCP_USER_TIMEOUT = TCP_USER_TIMEOUT;
+#else
+const pj_uint16_t PJ_TCP_USER_TIMEOUT = 18;
+#endif
+
 #if defined(SOL_KEEPALIVE)
 const pj_uint16_t PJ_SOL_KEEPALIVE = SOL_KEEPALIVE;
 #else

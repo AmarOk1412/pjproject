@@ -162,6 +162,11 @@ const pj_uint16_t PJ_TCP_KEEPIDLE = TCP_KEEPIDLE;
 # ifdef TCP_KEEPINTVL
 const pj_uint16_t PJ_TCP_KEEPINTVL = TCP_KEEPINTVL;
 # endif
+# ifdef TCP_USER_TIMEOUT
+const pj_uint16_t PJ_TCP_USER_TIMEOUT = TCP_USER_TIMEOUT;
+#else
+const pj_uint16_t PJ_TCP_USER_TIMEOUT = 18;
+# endif
 # ifdef TCP_KEEPCNT
 const pj_uint16_t PJ_TCP_KEEPCNT = TCP_KEEPCNT;
 # endif
@@ -592,7 +597,11 @@ PJ_DEF(pj_status_t) pj_sock_socket(int af,
 			       &val, sizeof(val));
 	    pj_sock_setsockopt(*sock, pj_SOL_TCP(), pj_TCP_KEEPINTVL(),
 			       &val, sizeof(val));
+	    val = 30000;
+	    pj_sock_setsockopt(*sock, pj_SOL_TCP(), pj_TCP_USER_TIMEOUT(),
+			       &val, sizeof(val));
 	    val = 1;
+
 	}
 #if defined(PJ_SOCK_HAS_IPV6_V6ONLY) && PJ_SOCK_HAS_IPV6_V6ONLY != 0
 	if (af == PJ_AF_INET6) {
