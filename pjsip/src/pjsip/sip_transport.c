@@ -2269,7 +2269,10 @@ PJ_DEF(pj_status_t) pjsip_tpmgr_acquire_transport2(pjsip_tpmgr *mgr,
 	pjsip_transport *seltp = sel->u.transport;
 
 	/* See if the transport is (not) suitable */
-	if (seltp->key.type != type) {
+	pjsip_transport_type_e type_no_ipv6 = type % PJSIP_TRANSPORT_IPV6;
+	pjsip_transport_type_e key_type_no_ipv6 = seltp->key.type %
+	    PJSIP_TRANSPORT_IPV6;
+	if (type_no_ipv6 != key_type_no_ipv6) {
 	    pj_lock_release(mgr->lock);
 	    TRACE_((THIS_FILE, "Transport type in tpsel not matched"));
 	    return PJSIP_ETPNOTSUITABLE;
