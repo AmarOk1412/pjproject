@@ -217,6 +217,7 @@ PJ_DEF(void) pj_stun_sock_cfg_default(pj_stun_sock_cfg *cfg)
     cfg->ka_interval = PJ_STUN_KEEP_ALIVE_SEC;
     cfg->qos_type = PJ_QOS_TYPE_BEST_EFFORT;
     cfg->qos_ignore_error = PJ_TRUE;
+    cfg->user_mapping_cnt = 0;
 }
 
 

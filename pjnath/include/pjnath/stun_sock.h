@@ -277,6 +277,28 @@ typedef struct pj_stun_sock_cfg
     pj_sockaddr bound_addr;
 
     /**
+     * This member holds a list of address mappings (internal/external) that
+     * the user (application) provides. These mappings are meant to be used
+     * to add server reflexive candidates that are not typically discovered
+     * by regular ICE operations. This is the case for mappings obtained
+     * through UPNP-IGD/NAT-PMP/PCP requests, or manually configured (port
+     * forward).
+     */
+    struct {
+        pj_sockaddr local_addr;
+        pj_sockaddr mapped_addr;
+        int tp_type;
+    } user_mapping[PJ_ICE_MAX_COMP];
+
+    /**
+     * Holds the actual number of allocated ports. If the feature is used,
+     * this value should match the number of components of the ICE session.
+     * The feature is disabled if this variable is set to 0.
+     * Default value is 0.
+     */
+    unsigned user_mapping_cnt;
+
+    /**
      * Specify the port range for STUN socket binding, relative to the start
      * port number specified in \a bound_addr. Note that this setting is only
      * applicable when the start port number is non zero.
