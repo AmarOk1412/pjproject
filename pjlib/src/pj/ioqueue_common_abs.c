@@ -1053,7 +1053,10 @@ retry_on_restart:
     /*
      * Check that address storage can hold the address parameter.
      */
-    PJ_ASSERT_RETURN(addrlen <= (int)sizeof(pj_sockaddr_in), PJ_EBUG);
+    PJ_ASSERT_RETURN((((pj_sockaddr*)addr)->addr.sa_family == pj_AF_INET() &&
+                      addrlen <= (int)sizeof(pj_sockaddr_in)) ||
+                     (((pj_sockaddr*)addr)->addr.sa_family == pj_AF_INET6() &&
+                      addrlen <= (int)sizeof(pj_sockaddr_in6)), PJ_EBUG);
 
     /*
      * Schedule asynchronous send.
